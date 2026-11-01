@@ -26,6 +26,7 @@ const METHODS_ACCEPTING_PR_REPO = new Set<string>([
   'github.mergePR',
   'github.setPRAutoMerge',
   'github.updatePRTitle',
+  'github.updatePR',
   'github.prComments',
   'github.prFileContents',
   'github.addPRReviewComment',

@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { salvagedOptional, salvagingArray } from '../../../src/shared/zod-salvage'
-import type { PRInfo } from '../../../src/shared/github/pull-request-types'
+import type {
+  GitHubPRFile,
+  GitHubPRFileViewedState,
+  PRInfo
+} from '../../../src/shared/github/pull-request-types'
 import type {
   GitHubWorkItem,
   GitHubWorkItemDetails
@@ -15,6 +19,7 @@ import {
   prCheckSummary,
   prCommentList,
   prCount,
+  prFileListSchema,
   prFlag,
   prMergeMethodSettings,
   prNullableFlag,
@@ -249,6 +254,21 @@ const workItemSchema = z
         }
   )
 
+const VIEWED_STATES: readonly GitHubPRFileViewedState[] = ['VIEWED', 'UNVIEWED', 'DISMISSED']
+
+function readPrFile(file: z.output<typeof prFileListSchema>[number]): GitHubPRFile {
+  const viewed = VIEWED_STATES.find((state) => state === file.viewerViewedState)
+  return {
+    path: file.path,
+    ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+    status: file.status ?? 'modified',
+    additions: file.additions ?? 0,
+    deletions: file.deletions ?? 0,
+    isBinary: file.isBinary ?? false,
+    ...(viewed ? { viewerViewedState: viewed } : {})
+  }
+}
+
 // Require item identity for the detail pane; missing companion lists render empty.
 export const githubWorkItemDetailsSchema = z
   .looseObject({
@@ -260,6 +280,8 @@ export const githubWorkItemDetailsSchema = z
     pullRequestId: prText('pullRequestId'),
     checks: prCheckList('checks'),
     participants: prUserList('participants'),
+    files: salvagedOptional('files', prFileListSchema),
+    filesUnavailable: prFlag('filesUnavailable'),
     // Absent assignees means unreported, distinct from a confirmed empty list.
     assignees: salvagedOptional('assignees', salvagingArray(z.string()))
   })
@@ -275,7 +297,10 @@ export const githubWorkItemDetailsSchema = z
           pullRequestId: details.pullRequestId,
           checks: details.checks ?? [],
           participants: details.participants ?? [],
-          assignees: details.assignees
+          assignees: details.assignees,
+          // Older hosts omit files; the PR tab hides its changes card rather than showing zero.
+          ...(details.files ? { files: details.files.map(readPrFile) } : {}),
+          ...(details.filesUnavailable === true ? { filesUnavailable: true } : {})
         }
   )
   .nullable()

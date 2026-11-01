@@ -93,3 +93,17 @@ export async function fetchMobileGitHistory(
     )
   }
 }
+
+// The base compare's ahead count is exact only for linear history: git.history's mergeBase is against the
+// upstream, and after any merge the newest N log entries can be the base's commits. A merge in range means
+// "unknown", so callers fall back to the branch-name seed rather than describe the wrong commits.
+export function branchCommitsSinceBase(
+  result: MobileGitHistoryResult,
+  commitsAhead: number | null | undefined
+): MobileGitHistoryItem[] {
+  if (commitsAhead == null || result.items.length < commitsAhead) {
+    return []
+  }
+  const commits = result.items.slice(0, commitsAhead)
+  return commits.some((item) => item.parentIds.length > 1) ? [] : commits
+}

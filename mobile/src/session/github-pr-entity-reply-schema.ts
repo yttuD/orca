@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { salvagedOptional, salvagingArray } from '../../../src/shared/zod-salvage'
+import { hostUnionArms, salvagedOptional, salvagingArray } from '../../../src/shared/zod-salvage'
 import type { GitHubReaction, PRComment } from '../../../src/shared/github/comment-types'
 import type {
   GitHubAssignableUser,
+  GitHubPRFile,
   GitHubPRMergeMethodSettings,
   GitHubPRReviewSummary,
   GitHubRepositoryIdentity,
@@ -239,3 +240,27 @@ export const prChecksSchema = salvagingArray(checkDetailSchema)
 export function prCheckList(name: string) {
   return salvagedOptional(name, prChecksSchema)
 }
+
+export const PR_FILE_STATUS = hostUnionArms<GitHubPRFile['status']>({
+  added: true,
+  modified: true,
+  removed: true,
+  renamed: true,
+  copied: true,
+  changed: true,
+  unchanged: true
+})
+
+// Changed files need path; viewed state stays open because it is only compared locally.
+// Status round-trips to host validation, so unknown arms become absent and use the caller’s modified fallback.
+export const prFileListSchema = salvagingArray(
+  z.looseObject({
+    path: z.string(),
+    oldPath: prText('oldPath'),
+    status: salvagedOptional('status', z.enum(PR_FILE_STATUS)),
+    additions: prCount('additions'),
+    deletions: prCount('deletions'),
+    isBinary: prFlag('isBinary'),
+    viewerViewedState: prText('viewerViewedState')
+  })
+)

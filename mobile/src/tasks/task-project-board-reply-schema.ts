@@ -5,9 +5,9 @@ import {
   assignableUserListSchema,
   detailCheckListSchema,
   detailCommentListSchema,
-  detailFileListSchema,
   reviewSummaryListSchema
 } from './task-provider-entity-reply-schema'
+import { prFileListSchema } from '../session/github-pr-entity-reply-schema'
 
 // Require only unguarded consumer reads: discriminated outcomes need ok, while guarded envelopes may omit it.
 
@@ -132,7 +132,7 @@ export const taskProjectRowDetailSchema = z.union([
       baseSha: projectMessage('baseSha'),
       pullRequestId: projectMessage('pullRequestId'),
       checks: salvagedOptional('checks', detailCheckListSchema),
-      files: salvagedOptional('files', detailFileListSchema)
+      files: salvagedOptional('files', prFileListSchema)
     })
   }),
   z.looseObject({ ok: z.literal(false), error: requiredProjectError })

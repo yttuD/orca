@@ -100,7 +100,7 @@ describe('PrActionsEngine — transport-rejection-normalized outcomes settle cle
       },
       onChange: () => {}
     })
-    await expect(engine.merge()).resolves.toBeUndefined()
+    await expect(engine.merge()).resolves.toBe(true)
     expect(engine.error).toBe('refresh failed')
     expect(engine.busy).toBeNull()
   })

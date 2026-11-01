@@ -3,6 +3,7 @@ import { salvagedOptional, salvagingArray } from '../../../src/shared/zod-salvag
 import {
   MERGEABLE_STATE,
   prCount,
+  prFileListSchema,
   prNullableText,
   prStringList,
   prText
@@ -11,7 +12,6 @@ import {
   assignableUserListSchema,
   detailCheckListSchema,
   detailCommentListSchema,
-  detailFileListSchema,
   reviewSummaryListSchema
 } from './task-provider-entity-reply-schema'
 
@@ -34,7 +34,7 @@ export const githubWorkItemDetailSchema = z
     baseSha: prText('baseSha'),
     pullRequestId: prText('pullRequestId'),
     checks: salvagedOptional('checks', detailCheckListSchema),
-    files: salvagedOptional('files', detailFileListSchema)
+    files: salvagedOptional('files', prFileListSchema)
   })
   .nullable()
 

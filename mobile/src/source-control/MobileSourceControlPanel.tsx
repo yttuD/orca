@@ -34,8 +34,11 @@ import { MOBILE_COMPLETE_MERGE_ACTION_ID } from './mobile-source-control-conflic
 import { isMobileConflictAborting } from './mobile-source-control-conflict-abort'
 import { useMobilePrSidebarController } from '../session/use-mobile-pr-sidebar-controller'
 import { prSidebarDetailsNeedFetch } from '../session/mobile-pr-sidebar-state'
-import { MobilePrViewPanelBody } from '../components/pr-sidebar/MobilePrViewPanel'
-import { openMobilePrUrl } from '../components/mobile-pr-url'
+import { MobilePrTabBody } from '../components/MobilePRSidebar'
+import { MobilePrTabSheets } from '../components/pr-sidebar/MobilePrTabSheets'
+import { PrChecksScreen } from '../components/pr-sidebar/PrChecksScreen'
+import { PrCommentsScreen } from '../components/pr-sidebar/PrCommentsScreen'
+import { useMobileSourceControlPrTab } from './use-mobile-source-control-pr-tab'
 
 export type MobileSourceControlPanelProps = {
   hostId: string
@@ -94,6 +97,9 @@ export function MobileSourceControlPanel({
   }, [])
   const openHistoryTab = useCallback(() => selectTab('history'), [selectTab])
   const openPrTab = useCallback(() => selectTab('pr'), [selectTab])
+  // The PR tab owns the Create PR sheet; Changes-tab entry points reach it through this ref.
+  const openCreatePrRef = useRef<() => void>(() => {})
+  const openCreatePr = useCallback(() => openCreatePrRef.current(), [])
 
   const state = useMobileSourceControlState({
     hostId,
@@ -104,7 +110,8 @@ export function MobileSourceControlPanel({
     onRequestClose,
     onFileOpenStart,
     onOpenedFileDiff,
-    onOpenHistory: openHistoryTab
+    onOpenHistory: openHistoryTab,
+    onCreatePr: openCreatePr
   })
   const {
     client,
@@ -236,17 +243,21 @@ export function MobileSourceControlPanel({
     void refetchPr({ includeDetails: false })
   }, [activeTab, isHostedRepo, loadStatus, refetchPr])
 
+  const { prTab, prScreen, setPrScreen, prMenuGroups } = useMobileSourceControlPrTab({
+    state,
+    worktreeId,
+    prController,
+    prBranch,
+    prHeadSha,
+    ready,
+    selectTab,
+    onRefresh,
+    openCreatePrRef
+  })
+
   // Embedded close dismisses the dock; route Back pops. The dock column owns safe-area chrome.
   const onBack = () => router.back()
   const onClose = onRequestClose ?? (() => router.back())
-  const prWebUrl =
-    activeTab === 'pr' &&
-    prController.prSidebarState.kind === 'ready' &&
-    prController.prSidebarState.data.pr.url
-      ? prController.prSidebarState.data.pr.url
-      : null
-  const prWebNumber =
-    prController.prSidebarState.kind === 'ready' ? prController.prSidebarState.data.pr.number : null
   const header = (
     <MobileSourceControlHeader
       embedded={embedded}
@@ -255,8 +266,7 @@ export function MobileSourceControlPanel({
       onBack={onBack}
       onClose={onClose}
       onRefresh={onRefresh}
-      onOpenPrWeb={prWebUrl ? () => openMobilePrUrl(prWebUrl) : undefined}
-      prNumber={prWebNumber}
+      menuGroups={activeTab === 'pr' ? prMenuGroups : null}
       accessory={
         <MobileSegmentedControl
           segments={SOURCE_CONTROL_HUB_TABS.map((tab) => ({
@@ -350,18 +360,19 @@ export function MobileSourceControlPanel({
 
       {showPrBody ? (
         <View style={hubStyles.tabBody}>
-          <MobilePrViewPanelBody
-            client={client}
-            connState={connState}
-            worktreeId={worktreeId}
-            branch={prBranch}
-            headSha={prHeadSha}
-            gitStatus={status}
-            isGithubRepo={isHostedRepo}
-            // Mid-probe false is still loading; do not flash unavailable.
-            branchContextLoaded={ready && prController.prSidebarRepoProbeLoaded}
-            controller={prController}
-            workspaceLabel={worktreeLabel}
+          <MobilePrTabBody
+            tab={prTab}
+            onRetry={prController.retryPRSidebar}
+            bottomInset={insets.bottom}
+            onOpenChanges={() => selectTab('changes')}
+            branchCompare={
+              branchCompareResult?.summary.status === 'ready'
+                ? {
+                    commitsAhead: branchCompareResult.summary.commitsAhead,
+                    baseRef: branchCompareResult.summary.baseRef
+                  }
+                : null
+            }
           />
         </View>
       ) : activeTab === 'pr' ? (
@@ -382,6 +393,24 @@ export function MobileSourceControlPanel({
       ) : null}
 
       <MobileSourceControlModals state={state} actionSheetActions={actionSheetActions} />
+      <MobilePrTabSheets tab={prTab} />
+      {prScreen ? (
+        <View style={hubStyles.screenLayer}>
+          {prScreen === 'checks' ? (
+            <PrChecksScreen
+              tab={prTab}
+              onBack={() => setPrScreen(null)}
+              bottomInset={insets.bottom}
+            />
+          ) : (
+            <PrCommentsScreen
+              tab={prTab}
+              onBack={() => setPrScreen(null)}
+              bottomInset={insets.bottom}
+            />
+          )}
+        </View>
+      ) : null}
     </View>
   )
 }

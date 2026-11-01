@@ -44,6 +44,7 @@ export type MobileSourceControlStateParams = {
   onFileOpenStart?: () => void
   onOpenedFileDiff?: (relativePath: string) => void
   onOpenHistory?: () => void
+  onCreatePr?: () => void
 }
 
 export function useMobileSourceControlState(params: MobileSourceControlStateParams) {
@@ -57,7 +58,8 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     onRequestClose,
     onFileOpenStart,
     onOpenedFileDiff,
-    onOpenHistory
+    onOpenHistory,
+    onCreatePr
   } = params
   const insets = useSafeAreaInsets()
   const { client, state: connState } = useWorkspaceClient(hostId)
@@ -180,7 +182,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     hostId,
     worktreeId,
     status,
-    branchLabel,
     commitMessage,
     stagedEntries: stagedEntriesForRecovery,
     generatingMessage,
@@ -200,10 +201,9 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     setShowActionSheet,
     setLocalBranches,
     setShowBranchPicker,
-    setCreatedPrUrl,
-    setCreatedPrWarning,
     recordCommitFailure,
-    onOpenHistory
+    onOpenHistory,
+    onCreatePr
   })
   // The panel adds the branch's review before building the action, so only the inputs live here.
   const primaryActionArgs = useMemo(

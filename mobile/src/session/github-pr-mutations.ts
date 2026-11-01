@@ -1,6 +1,7 @@
 import type { GitHubPRMergeMethod } from '../../../src/shared/github/pull-request-types'
 import {
   githubPrAutoMergeSet,
+  githubPrBodySet,
   githubPrChecksRerun,
   githubPrIssueCommentAdd,
   githubPrIssueCommentDelete,
@@ -64,6 +65,21 @@ export function fetchUpdatePRTitle(
         })
       ),
     translate('session.githubPrMutations.titleUpdateFailed', 'Failed to update title.')
+  )
+}
+
+export function fetchUpdatePRBody(
+  client: RpcOperationSender,
+  worktreeId: string,
+  args: { prNumber: number; body: string; prRepo?: GitHubPrRepoSlug | null }
+): Promise<GitHubPrMutationOutcome> {
+  const params = { prNumber: args.prNumber, updates: { body: args.body } }
+  const method = githubPrBodySet.operation.method
+  return settleGithubPrMutation(githubPrBodySet, () =>
+    githubPrBodySet.request(
+      client,
+      githubPrRequestParams(method, worktreeId, params, { prRepo: args.prRepo })
+    )
   )
 }
 

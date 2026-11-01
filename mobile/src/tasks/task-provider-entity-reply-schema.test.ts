@@ -4,11 +4,11 @@ import {
   assignableUserListSchema,
   detailCheckListSchema,
   detailCommentListSchema,
-  detailFileListSchema,
   reviewSummaryListSchema,
   taskCommentWriteEnvelopeSchema,
   taskMutationEnvelopeSchema
 } from './task-provider-entity-reply-schema'
+import { prFileListSchema } from '../session/github-pr-entity-reply-schema'
 
 function reads<T>(schema: z.ZodType<T, unknown>, value: unknown): T {
   const parsed = schema.safeParse(value)
@@ -146,8 +146,8 @@ describe('a check row and a file row', () => {
   })
 
   it('requires the path a file row is matched by', () => {
-    expect(reads(detailFileListSchema, [{ path: 'src/a.ts' }])).toHaveLength(1)
-    expect(reads(detailFileListSchema, [{ oldPath: 'src/a.ts' }])).toEqual([])
+    expect(reads(prFileListSchema, [{ path: 'src/a.ts' }])).toHaveLength(1)
+    expect(reads(prFileListSchema, [{ oldPath: 'src/a.ts' }])).toEqual([])
   })
 
   it('carries every file status the host will accept back and drops one it would refuse', () => {
@@ -160,22 +160,22 @@ describe('a check row and a file row', () => {
       'changed',
       'unchanged'
     ]) {
-      expect(reads(detailFileListSchema, [{ path: 'a', status }])[0]?.status).toBe(status)
+      expect(reads(prFileListSchema, [{ path: 'a', status }])[0]?.status).toBe(status)
     }
     // Absent status uses modified; forwarding an unknown arm would fail the host’s params validation.
-    expect(reads(detailFileListSchema, [{ path: 'a', status: 'ADDED' }])[0]?.status).toBeUndefined()
+    expect(reads(prFileListSchema, [{ path: 'a', status: 'ADDED' }])[0]?.status).toBeUndefined()
   })
 
   it('forwards a viewed state the host has and one this build predates', () => {
     for (const viewerViewedState of ['DISMISSED', 'VIEWED', 'UNVIEWED', 'PENDING']) {
       expect(
-        reads(detailFileListSchema, [{ path: 'a', viewerViewedState }])[0]?.viewerViewedState
+        reads(prFileListSchema, [{ path: 'a', viewerViewedState }])[0]?.viewerViewedState
       ).toBe(viewerViewedState)
     }
   })
 
   it('salvages a malformed viewed state to absent and keeps the row', () => {
-    const row = reads(detailFileListSchema, [{ path: 'a', viewerViewedState: { v: 'VIEWED' } }])[0]
+    const row = reads(prFileListSchema, [{ path: 'a', viewerViewedState: { v: 'VIEWED' } }])[0]
     expect(row?.path).toBe('a')
     expect(row?.viewerViewedState).toBeUndefined()
   })

@@ -8,6 +8,8 @@ const gitHistoryItemSchema = z.looseObject({
   id: z.string(),
   parentIds: z.array(z.string()),
   subject: z.string().optional(),
+  // Full message; Create PR seeds a one-commit description from its body.
+  message: z.string().optional(),
   displayId: z.string().optional(),
   author: z.string().optional(),
   // Hosts send null for undated commits; number-or-absent would drop valid rows.

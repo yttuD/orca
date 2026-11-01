@@ -34,6 +34,8 @@ function mutationStatusOperation<Method extends RpcMethodName>(name: string, met
 
 export const githubPrMergeRun = mutationStatusOperation('github.merge-pr', 'github.mergePR')
 
+export const githubPrBodySet = mutationStatusOperation('github.update-pr', 'github.updatePR')
+
 export const githubPrAutoMergeSet = mutationStatusOperation(
   'github.set-pr-auto-merge',
   'github.setPRAutoMerge'
