@@ -668,7 +668,7 @@ describe('createEditorSlice remote branch actions', () => {
           })
       )
 
-    const pushA = store.getState().pushBranch('wt-1', '/a')
+    const pushA = store.getState().pushBranch('wt-1', '/a', true)
     // Kick microtasks so pushA has begun and flipped the flag on.
     await Promise.resolve()
     expect(store.getState().isRemoteOperationActive).toBe(true)
@@ -679,15 +679,62 @@ describe('createEditorSlice remote branch actions', () => {
     await Promise.resolve()
     expect(store.getState().isRemoteOperationActive).toBe(true)
 
+    expect(store.getState().remoteOperations).toEqual([
+      { worktreeId: 'wt-1', kind: 'publish' },
+      { worktreeId: 'wt-2', kind: 'push' }
+    ])
     resolveA()
     await pushA.catch(() => {})
+    expect(store.getState().remoteOperations).toEqual([{ worktreeId: 'wt-2', kind: 'push' }])
     // B is still running, so the busy flag must remain true.
     expect(store.getState().isRemoteOperationActive).toBe(true)
 
     resolveB()
     await pushB.catch(() => {})
+    expect(store.getState().remoteOperations).toEqual([])
     expect(store.getState().isRemoteOperationActive).toBe(false)
   })
+
+  it.each(['publish', 'fetch'] as const)(
+    'keeps the remaining operation when %s finishes first in the same workspace',
+    async (firstToFinish) => {
+      const store = createEditorStore()
+      let finishPublish: () => void = () => {}
+      let finishFetch: () => void = () => {}
+      gitPushMock.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPublish = resolve
+          })
+      )
+      gitFetchMock.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishFetch = resolve
+          })
+      )
+      const publishing = store.getState().pushBranch('wt-1', '/repo', true)
+      const fetching = store.getState().fetchBranch('wt-1', '/repo')
+
+      if (firstToFinish === 'publish') {
+        finishPublish()
+        await publishing
+      } else {
+        finishFetch()
+        await fetching
+      }
+      expect(store.getState().isRemoteOperationActive).toBe(true)
+      expect(store.getState().remoteOperations).toEqual([
+        { worktreeId: 'wt-1', kind: firstToFinish === 'publish' ? 'fetch' : 'publish' }
+      ])
+
+      finishPublish()
+      finishFetch()
+      await Promise.all([publishing, fetching])
+      expect(store.getState().remoteOperations).toEqual([])
+      expect(store.getState().isRemoteOperationActive).toBe(false)
+    }
+  )
 
   it('runs syncBranch end-to-end (fetch+pull+push) on success', async () => {
     // Sync leaves post-op reconciliation to polling but retains in-operation status because it gates push.
