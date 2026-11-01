@@ -118,7 +118,7 @@ export const BRIDGED_PARITY_EXCLUSIONS: Readonly<Partial<Record<BridgedParityCla
 export const BRIDGED_PARITY_BASELINE: Readonly<Record<BridgedParityClass | 'identical', number>> = {
   identical: 388,
   'reply-meta-required': 0,
-  'result-absent-settlement': 338,
+  'result-absent-settlement': 339,
   'result-absent-observation': 3,
   'result-absent-stream-release': 6,
   'params-undefined': 27,
