@@ -12,8 +12,9 @@ if (!(Test-Path $destDirOrca)) {
 }
 
 Write-Host "Launching Electron..."
+$env:ORCA_SCREENSHOT_PATH = "D:\Programacion-Cosas\orca\screenshots\orca-window-direct.png"
 $proc = Start-Process -FilePath "D:\Programacion-Cosas\orca\node_modules\electron\dist\electron.exe" `
-    -ArgumentList ".", "--js-flags=--max-old-space-size=1024" `
+    -ArgumentList ".", "--js-flags=--max-old-space-size=768" `
     -WorkingDirectory "D:\Programacion-Cosas\orca" `
     -PassThru
 
@@ -37,6 +38,11 @@ $bitmap.Dispose()
 Write-Host "Screenshots saved successfully:"
 Write-Host " - $fileMaster (Size: $((Get-Item $fileMaster).Length) bytes)"
 Write-Host " - $fileOrca (Size: $((Get-Item $fileOrca).Length) bytes)"
+
+if (Test-Path $env:ORCA_SCREENSHOT_PATH) {
+    Copy-Item $env:ORCA_SCREENSHOT_PATH (Join-Path $destDirMaster "orca-window-direct.png") -Force
+    Write-Host " - Direct window capture: $env:ORCA_SCREENSHOT_PATH"
+}
 
 Write-Host "Stopping Electron process tree..."
 try {

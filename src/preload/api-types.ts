@@ -190,6 +190,42 @@ export type PreloadApi = {
       }[]
     }>
     status: () => Promise<{ status: string; ok: boolean }>
+    listTasks: (projectId?: string) => Promise<{
+      ok: boolean
+      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
+      error_code?: string
+      error_message?: string
+      project_id?: string
+      tasks: readonly {
+        readonly id: string
+        readonly project_id: string
+        readonly title: string
+        readonly status: string
+        readonly executor: string
+        readonly created_at?: string | null
+        readonly updated_at?: string | null
+      }[]
+    }>
+    getExecution: (
+      projectId: string,
+      taskId: string
+    ) => Promise<{
+      ok: boolean
+      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
+      error_code?: string
+      error_message?: string
+      execution?: {
+        readonly task_id: string
+        readonly project_id: string
+        readonly status: string
+        readonly executor: string
+        readonly attempt_id?: string | null
+        readonly lease_owner: string
+        readonly lease_generation: number
+        readonly last_activity?: string | null
+        readonly verdict?: string | null
+      } | null
+    }>
   }
 }
 

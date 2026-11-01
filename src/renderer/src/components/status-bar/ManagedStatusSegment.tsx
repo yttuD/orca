@@ -2,16 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-
-type ManagedProject = {
-  readonly id: string
-  readonly name: string
-  readonly description?: string | null
-  readonly status: string
-  readonly mode: string
-  readonly created_at?: string | null
-  readonly updated_at?: string | null
-}
+import {
+  ManagedProjectRow,
+  type ManagedProject,
+  type ManagedTask,
+  type ManagedExecution
+} from './ManagedProjectRow'
 
 type ManagedStatus = 'ONLINE' | 'OFFLINE' | 'ERROR' | 'LOADING'
 
@@ -22,15 +18,75 @@ export function ManagedStatusSegment({
 }): React.JSX.Element {
   const [status, setStatus] = useState<ManagedStatus>('LOADING')
   const [projects, setProjects] = useState<readonly ManagedProject[]>([])
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  // Selected project & task for inspection
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [tasks, setTasks] = useState<readonly ManagedTask[]>([])
+  const [loadingTasks, setLoadingTasks] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [execution, setExecution] = useState<ManagedExecution | null>(null)
+  const [loadingExecution, setLoadingExecution] = useState(false)
+
+  const loadTasks = useCallback(async (projId: string) => {
+    if (!window.api?.managed?.listTasks) {
+      return
+    }
+    setLoadingTasks(true)
+    try {
+      const res = await window.api.managed.listTasks(projId)
+      if (res.ok) {
+        const tList = res.tasks || []
+        setTasks(tList)
+        if (tList.length > 0) {
+          setSelectedTaskId(tList[0].id)
+          if (window.api?.managed?.getExecution) {
+            setLoadingExecution(true)
+            const execRes = await window.api.managed.getExecution(projId, tList[0].id)
+            if (execRes.ok && execRes.execution) {
+              setExecution(execRes.execution)
+            }
+            setLoadingExecution(false)
+          }
+        }
+      } else {
+        setTasks([])
+      }
+    } catch {
+      setTasks([])
+    } finally {
+      setLoadingTasks(false)
+    }
+  }, [])
+
+  const loadExecution = useCallback(async (projId: string, taskId: string) => {
+    if (!window.api?.managed?.getExecution) {
+      return
+    }
+    setLoadingExecution(true)
+    try {
+      const res = await window.api.managed.getExecution(projId, taskId)
+      if (res.ok && res.execution) {
+        setExecution(res.execution)
+      } else {
+        setExecution(null)
+      }
+    } catch {
+      setExecution(null)
+    } finally {
+      setLoadingExecution(false)
+    }
+  }, [])
 
   const fetchStatus = useCallback(async () => {
     setRefreshing(true)
     try {
       if (!window.api?.managed?.listProjects) {
         setStatus('OFFLINE')
+        setErrorCode('BRIDGE_UNAVAILABLE')
         setErrorMessage('Bridge managed no disponible en este entorno.')
         setProjects([])
         return
@@ -38,32 +94,67 @@ export function ManagedStatusSegment({
       const res = await window.api.managed.listProjects()
       if (res.ok && res.status === 'ONLINE') {
         setStatus('ONLINE')
-        setProjects(res.projects || [])
+        const projs = res.projects || []
+        setProjects(projs)
+        setErrorCode(null)
         setErrorMessage(null)
+        if (projs.length > 0) {
+          setSelectedProjectId(projs[0].id)
+          loadTasks(projs[0].id)
+        }
       } else if (res.status === 'OFFLINE') {
         setStatus('OFFLINE')
         setProjects([])
+        setErrorCode(res.error_code || 'ENGINE_OFFLINE')
         setErrorMessage(res.error_message || 'Motor Python desconectado')
       } else {
         setStatus('ERROR')
         setProjects([])
+        setErrorCode(res.error_code || 'RPC_ERROR')
         setErrorMessage(res.error_message || 'Error en respuesta RPC')
       }
     } catch (err: unknown) {
       setStatus('OFFLINE')
       setProjects([])
+      setErrorCode('CONN_FAIL')
       setErrorMessage(err instanceof Error ? err.message : 'Fallo de conexión al motor')
     } finally {
       setRefreshing(false)
     }
-  }, [])
+  }, [loadTasks])
 
   useEffect(() => {
     fetchStatus()
-    // Poll cautiously every 15s to keep status fresh without flooding host
     const interval = setInterval(fetchStatus, 15000)
     return () => clearInterval(interval)
   }, [fetchStatus])
+
+  const handleSelectProject = (projId: string) => {
+    if (selectedProjectId === projId) {
+      setSelectedProjectId(null)
+      setTasks([])
+      setSelectedTaskId(null)
+      setExecution(null)
+    } else {
+      setSelectedProjectId(projId)
+      setSelectedTaskId(null)
+      setExecution(null)
+      loadTasks(projId)
+    }
+  }
+
+  const handleSelectTask = (taskId: string) => {
+    if (!selectedProjectId) {
+      return
+    }
+    if (selectedTaskId === taskId) {
+      setSelectedTaskId(null)
+      setExecution(null)
+    } else {
+      setSelectedTaskId(taskId)
+      loadExecution(selectedProjectId, taskId)
+    }
+  }
 
   const statusBadge = {
     ONLINE: {
@@ -117,10 +208,9 @@ export function ManagedStatusSegment({
         side="top"
         align="start"
         sideOffset={6}
-        className="w-80 rounded-lg border border-border/60 bg-popover/95 p-3.5 shadow-xl backdrop-blur-md"
+        className="w-96 rounded-lg border border-border/60 bg-popover/95 p-3.5 shadow-xl backdrop-blur-md"
       >
         <div className="flex flex-col gap-3">
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-border/40 pb-2">
             <div className="flex items-center gap-2">
               <Layers className="size-4 text-sky-400" />
@@ -147,21 +237,19 @@ export function ManagedStatusSegment({
             </div>
           </div>
 
-          {/* Subtitle / Mode info */}
           <div className="rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1.5 text-[11px] text-sky-300">
             <div className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="size-3.5 text-sky-400 shrink-0" />
               <span>Modo Solo Lectura M0 (Solo Proyecciones)</span>
             </div>
             <p className="mt-0.5 text-[10px] text-sky-300/80">
-              Autoridad exclusiva en el motor Python (127.0.0.1:8765). Cero inferencias ni
-              mutaciones desde la interfaz.
+              Autoridad exclusiva en el motor Python (127.0.0.1:8765) con autenticación local. Cero
+              inferencias ni mutaciones desde la interfaz.
             </p>
           </div>
 
-          {/* Body Content */}
           {status === 'ONLINE' ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
                 <span>Proyectos Registrados ({projects.length})</span>
                 <span className="text-[10px] font-mono text-zinc-500">ProjectStore</span>
@@ -171,22 +259,20 @@ export function ManagedStatusSegment({
                   No hay proyectos registrados en el motor local.
                 </div>
               ) : (
-                <div className="scrollbar-sleek flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-0.5">
+                <div className="scrollbar-sleek flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-0.5">
                   {projects.map((p) => (
-                    <div
+                    <ManagedProjectRow
                       key={p.id}
-                      className="flex items-center justify-between rounded-md border border-border/40 bg-card/60 px-2.5 py-1.5 text-xs transition-colors hover:bg-card"
-                    >
-                      <div className="flex flex-col truncate pr-2">
-                        <span className="font-medium text-foreground truncate">{p.name}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground truncate">
-                          {p.id}
-                        </span>
-                      </div>
-                      <span className="shrink-0 rounded bg-secondary/80 px-1.5 py-0.5 text-[10px] font-mono text-secondary-foreground">
-                        {p.status}
-                      </span>
-                    </div>
+                      project={p}
+                      isSelected={selectedProjectId === p.id}
+                      tasks={tasks}
+                      loadingTasks={loadingTasks}
+                      selectedTaskId={selectedTaskId}
+                      execution={execution}
+                      loadingExecution={loadingExecution}
+                      onSelectProject={handleSelectProject}
+                      onSelectTask={handleSelectTask}
+                    />
                   ))}
                 </div>
               )}
@@ -195,14 +281,16 @@ export function ManagedStatusSegment({
             <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-200/90">
               <div className="flex items-center gap-1.5 font-medium text-amber-300">
                 <ShieldAlert className="size-4 shrink-0" />
-                <span>Motor Python Desconectado</span>
+                <span>
+                  {status === 'ERROR'
+                    ? `Error de Conexión (${errorCode || 'ERROR'})`
+                    : 'Motor Python Desconectado'}
+                </span>
               </div>
               <p className="mt-1 text-[11px] leading-relaxed text-amber-200/80">
-                Inicie el servidor orquestador con{' '}
-                <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-amber-100">
-                  --staging-local
-                </code>{' '}
-                para sincronizar proyectos reales.
+                {status === 'ERROR' && errorCode === 'AUTH_REQUIRED'
+                  ? 'El puente local requiere autenticación. Verifique que .operator_token exista o ORCHESTRATOR_TOKEN esté configurado.'
+                  : 'Inicie el servidor orquestador con --staging-local para sincronizar proyectos reales.'}
               </p>
               {errorMessage ? (
                 <p
