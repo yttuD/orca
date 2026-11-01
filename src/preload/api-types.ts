@@ -173,6 +173,24 @@ export type PreloadApi = {
   agentStatus: AgentStatusApi
   mobile: MobileApi
   speech: SpeechApi
+  managed: {
+    listProjects: () => Promise<{
+      ok: boolean
+      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
+      error_code?: string
+      error_message?: string
+      projects: readonly {
+        readonly id: string
+        readonly name: string
+        readonly description?: string | null
+        readonly status: string
+        readonly mode: string
+        readonly created_at?: string | null
+        readonly updated_at?: string | null
+      }[]
+    }>
+    status: () => Promise<{ status: string; ok: boolean }>
+  }
 }
 
 export type {

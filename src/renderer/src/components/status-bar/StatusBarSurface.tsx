@@ -21,6 +21,7 @@ import { SkillUpdateStatusSegment } from './SkillUpdateStatusSegment'
 import { NativeChatResumeStatusSegment } from './NativeChatResumeStatusSegment'
 import { CaffeinateStatusSegment } from './CaffeinateStatusSegment'
 import { PluginsStatusSegment } from './PluginsStatusSegment'
+import { ManagedStatusSegment } from './ManagedStatusSegment'
 import { RemoteServerUpdateStatusSegment } from './RemoteServerUpdateStatusSegment'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
 import { FloatingTerminalIconContextMenu } from '@/components/floating-terminal/FloatingTerminalIconContextMenu'
@@ -294,6 +295,7 @@ export function StatusBarSurface({
           {!isPairedWebClientWindow() ? (
             <>
               <PluginsStatusSegment />
+              <ManagedStatusSegment iconOnly={segmentsIconOnly} />
               <CaffeinateStatusSegment iconOnly={segmentsIconOnly} />
             </>
           ) : null}

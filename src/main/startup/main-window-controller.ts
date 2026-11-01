@@ -240,5 +240,25 @@ export function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}
   })
   logStartupMilestone('load-start')
   loadMainWindow(window)
+
+  if (process.env.ORCA_SCREENSHOT_PATH) {
+    const targetPath = process.env.ORCA_SCREENSHOT_PATH
+    window.webContents.on('did-finish-load', () => {
+      setTimeout(async () => {
+        try {
+          const image = await window.webContents.capturePage()
+          const fs = await import('node:fs')
+          fs.writeFileSync(targetPath, image.toPNG())
+          console.log(`[ORCA_SCREENSHOT_OK] Saved screenshot to ${targetPath}`)
+          setTimeout(() => {
+            app.quit()
+          }, 1000)
+        } catch (err) {
+          console.error('[ORCA_SCREENSHOT_ERROR]', err)
+        }
+      }, 5000)
+    })
+  }
+
   return window
 }

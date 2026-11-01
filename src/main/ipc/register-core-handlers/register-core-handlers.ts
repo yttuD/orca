@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../shared/layout-owner-switch'
 import { registerAppHandlers } from '../app'
+import { registerManagedHandlers } from '../managed'
 import { registerWslMoveWiring } from '../wsl-move-driver-wiring'
 import { registerWslDriveProjectHandlers } from '../wsl-drive-project-handlers'
 import { installProjectRuntimeGitRouter } from '../../project-runtime-git-router'
@@ -303,4 +304,5 @@ export function registerCoreHandlers(
   })
   registerUpdaterHandlers(store)
   registerSpeechHandlers(store)
+  registerManagedHandlers()
 }
