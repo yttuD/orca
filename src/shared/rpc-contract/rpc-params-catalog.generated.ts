@@ -512,6 +512,7 @@ import {
   PluginSetEnabledParams,
   PluginSetSystemEnabledParams,
   PluginShotParams,
+  PluginShotReplayParams,
   PluginsPanelActionParams
 } from './plugins-params'
 import {
@@ -1331,6 +1332,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'plugins.setEnabled': PluginSetEnabledParams,
   'plugins.setSystemEnabled': PluginSetSystemEnabledParams,
   'plugins.shot': PluginShotParams,
+  'plugins.shotReplay': PluginShotReplayParams,
   'preflight.check': PreflightCheck,
   'preflight.detectAgents': PreflightProjectAgentDetection,
   'preflight.detectRemoteAgents': PreflightDetectRemoteAgents,
