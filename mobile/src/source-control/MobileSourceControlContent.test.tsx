@@ -53,6 +53,7 @@ vi.mock('react-native', () => ({
   View: 'View'
 }))
 vi.mock('expo-clipboard', () => ({ setStringAsync: async () => {} }))
+vi.mock('../components/ConfirmModal', () => ({ ConfirmModal: () => null }))
 vi.mock('lucide-react-native', () => ({
   ArrowDown: 'ArrowDown',
   ArrowDownUp: 'ArrowDownUp',
@@ -235,6 +236,8 @@ function Fixture({ initial }: { initial: MobileSourceControlContentState }) {
     createElement(MobileSourceControlNextStepBar, {
       view: { kind: 'composer' },
       notice: null,
+      agentNotice: null,
+      mergeConfirm: null,
       composer: liveState,
       primaryAction: state.primaryAction,
       keyboardLift: state.keyboardLift,

@@ -23,6 +23,8 @@ type Props = {
   workspaceLabel: string | null
   /** Clears whatever the hub floats over the body's foot; defaults to the safe area. */
   bottomInset?: number
+  /** False while the hub's next-step bar is offering Merge or auto-merge itself. */
+  showMergeActions?: boolean
 }
 
 // Hub owns PR header/segments/load/controller; one fetch feeds branch chip and chromeless sidebar body.
@@ -37,7 +39,8 @@ export function MobilePrViewPanelBody({
   branchContextLoaded = true,
   controller,
   workspaceLabel,
-  bottomInset
+  bottomInset,
+  showMergeActions = true
 }: Props) {
   useMobileColorScheme()
   const t = useMobileTranslation()
@@ -75,8 +78,7 @@ export function MobilePrViewPanelBody({
         bottomInset={bottomInset ?? insets.bottom}
         // Hub header already hosts open-on-web while this segment is active.
         showOpenOnWeb={false}
-        // The hub's next-step bar owns Merge and auto-merge.
-        showMergeActions={false}
+        showMergeActions={showMergeActions}
         workspaceLabel={workspaceLabel}
       />
     </View>

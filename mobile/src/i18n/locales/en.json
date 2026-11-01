@@ -3171,11 +3171,11 @@
       "publishBranch": "Publish Branch",
       "commitFiles_one": "Commit {{count}} file",
       "commitFiles_other": "Commit {{count}} files",
-      "stageAllSentence": "Stage all",
       "pushCommits_one": "Push {{count}} commit",
       "pushCommits_other": "Push {{count}} commits",
       "pullCommits_one": "Pull {{count}} commit",
-      "pullCommits_other": "Pull {{count}} commits"
+      "pullCommits_other": "Pull {{count}} commits",
+      "stageAll": "Stage all"
     },
     "branchDiffPreviewDrawer": {
       "committedOnBranch": "Committed on branch",
@@ -3363,7 +3363,7 @@
     },
     "hubTab": {
       "changes": "Changes",
-      "pullRequestSentence": "Pull request"
+      "pullRequest": "Pull request"
     },
     "screenState": {
       "noBranch": "No branch"
