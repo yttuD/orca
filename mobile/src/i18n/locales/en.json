@@ -1555,7 +1555,6 @@
     },
     "screens": {
       "back": "Back to pull request",
-      "refreshChecks": "Refresh checks",
       "namesAndMore": "{{names}} and {{count}} more",
       "running": "{{count}} running",
       "fixWithAi": "Fix with AI",
@@ -1567,7 +1566,6 @@
       "resolvedCount": "Resolved {{count}}",
       "bot": "bot",
       "noPullRequest": "This branch has no pull request now.",
-      "refreshComments": "Refresh comments",
       "hideLog": "Hide log",
       "viewLog": "View log",
       "copyError": "Copy error",
@@ -1598,7 +1596,11 @@
       "copyErrorFailed": "Could not copy the error.",
       "backToComments": "Back to comments",
       "threadSubtitle_one": "{{author}} · {{count}} message",
-      "threadSubtitle_other": "{{author}} · {{count}} messages"
+      "threadSubtitle_other": "{{author}} · {{count}} messages",
+      "fixWith": "Fix with {{agent}}",
+      "live": "Live",
+      "askToFix": "Ask {{agent}} to fix",
+      "askAiToFix": "Ask AI to fix"
     },
     "mergeSheet": {
       "squashDetail": "One commit on {{base}}",

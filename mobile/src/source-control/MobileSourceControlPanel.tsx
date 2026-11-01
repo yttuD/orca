@@ -245,6 +245,7 @@ export function MobileSourceControlPanel({
 
   const { prTab, prScreen, setPrScreen, prMenuGroups } = useMobileSourceControlPrTab({
     state,
+    activeTab,
     worktreeId,
     prController,
     prBranch,

@@ -34,7 +34,12 @@ type PrSidebarControllerInput = {
 // Load body/comments only when the PR segment opens; the hub chip needs just PR/checks.
 export type PrSidebarLoadOptions = {
   includeDetails?: boolean
+  /** A poll the user did not ask for: a failed read leaves the shown PR in place. */
+  background?: boolean
 }
+
+/** applied: on screen. stale: superseded or skipped. failed: the read failed and the shown PR stayed. */
+export type PrSidebarLoadResult = 'applied' | 'stale' | 'failed'
 
 // Keep HEAD out of identity: commits soft-refresh checks without clearing ready UI.
 export function buildMobilePrSidebarIdentity(args: {
@@ -127,13 +132,13 @@ export function useMobilePrSidebarController(input: PrSidebarControllerInput) {
     }
   }, [identity])
 
-  const load = useCallback(
-    async (options?: PrSidebarLoadOptions) => {
+  const loadOnce = useCallback(
+    async (options?: PrSidebarLoadOptions): Promise<PrSidebarLoadResult> => {
       const includeDetails = options?.includeDetails ?? true
       const deps = buildDeps()
       const loadIdentity = identity
       if (!deps || !branch || !loadIdentity) {
-        return
+        return 'stale'
       }
       const seq = loadSeqRef.current + 1
       loadSeqRef.current = seq
@@ -154,7 +159,21 @@ export function useMobilePrSidebarController(input: PrSidebarControllerInput) {
         !shouldApplyResult(seq, loadSeqRef.current) ||
         stateIdentityRef.current !== loadIdentity
       ) {
-        return
+        return 'stale'
+      }
+      // A background poll keeps what is on screen when its read fails; the poller backs off instead.
+      // A failed checks read on the same PR keeps the checks it had rather than emptying the Checks screen.
+      const current = stateRef.current
+      if (
+        options?.background &&
+        current.kind === 'ready' &&
+        (next.kind === 'error' ||
+          next.kind === 'blocked' ||
+          (next.kind === 'ready' &&
+            next.data.checksError !== null &&
+            next.data.pr.number === current.data.pr.number))
+      ) {
+        return 'failed'
       }
       stateIdentityRef.current = loadIdentity
 
@@ -170,12 +189,12 @@ export function useMobilePrSidebarController(input: PrSidebarControllerInput) {
       if (next.kind === 'ready' && priorDetails != null) {
         setState({ kind: 'ready', data: { ...next.data, details: priorDetails } })
         if (!includeDetails) {
-          return
+          return 'applied'
         }
       } else {
         setState(next)
         if (next.kind !== 'ready' || !includeDetails) {
-          return
+          return next.kind === 'ready' || next.kind === 'none' ? 'applied' : 'failed'
         }
       }
 
@@ -194,7 +213,7 @@ export function useMobilePrSidebarController(input: PrSidebarControllerInput) {
         stateRef.current.kind !== 'ready' ||
         stateRef.current.data.pr.number !== next.data.pr.number
       ) {
-        return
+        return 'applied'
       }
       // Replace nonfatal null with a placeholder so details cannot spin forever.
       const details = resolvePrSidebarDetailsAfterPhase2({
@@ -203,8 +222,26 @@ export function useMobilePrSidebarController(input: PrSidebarControllerInput) {
         pr: stateRef.current.data.pr
       })
       setState({ kind: 'ready', data: { ...stateRef.current.data, details } })
+      return 'applied'
     },
     [buildDeps, branch, headSha, identity, worktreeId]
+  )
+
+  // A poll never supersedes a read the user started; it skips and tries again later.
+  const foregroundLoadsRef = useRef(0)
+  const load = useCallback(
+    async (options?: PrSidebarLoadOptions): Promise<PrSidebarLoadResult> => {
+      if (options?.background) {
+        return foregroundLoadsRef.current > 0 ? 'stale' : loadOnce(options)
+      }
+      foregroundLoadsRef.current += 1
+      try {
+        return await loadOnce(options)
+      } finally {
+        foregroundLoadsRef.current -= 1
+      }
+    },
+    [loadOnce]
   )
 
   const ensurePrSidebarDetails = useCallback(async () => {
