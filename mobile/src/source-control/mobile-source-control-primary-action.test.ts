@@ -45,7 +45,7 @@ function args(overrides: Partial<MobileSourceControlPrimaryActionArgs> = {}) {
 }
 
 describe('buildMobileSourceControlPrimaryAction', () => {
-  it('selects Stage All for unstaged work and dispatches the stage runner', () => {
+  it('selects Stage all for unstaged work and dispatches the stage runner', () => {
     const h = handlers()
     const action = buildMobileSourceControlPrimaryAction(
       args({
@@ -54,7 +54,7 @@ describe('buildMobileSourceControlPrimaryAction', () => {
         handlers: h
       })
     )
-    expect(action.label).toBe('Stage All')
+    expect(action.label).toBe('Stage all')
     expect(action.disabled).toBe(false)
     action.onPress()
     expect(h.stageAll).toHaveBeenCalledTimes(1)
@@ -69,7 +69,7 @@ describe('buildMobileSourceControlPrimaryAction', () => {
         handlers: h
       })
     )
-    expect(action.label).toBe('Commit')
+    expect(action.label).toBe('Commit 1 file')
     expect(action.disabled).toBe(false)
     action.onPress()
     expect(h.commit).toHaveBeenCalledTimes(1)
@@ -177,7 +177,7 @@ describe('buildMobileSourceControlPrimaryAction', () => {
         commitMessage: 'Resolve'
       })
     )
-    expect(action.label).toBe('Commit')
+    expect(action.label).toBe('Commit 1 file')
     expect(action.disabled).toBe(true)
     expect(action.accessibilityHint).toBe('Resolve conflicts before committing.')
   })
