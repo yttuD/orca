@@ -17,6 +17,7 @@ import { parsePairingCode } from '../src/shared/pairing'
 import {
   execAdb,
   isScreenTextPresent,
+  tapScreenText,
   waitForScreenText,
   captureScreen,
   startScreenRecording,
@@ -115,40 +116,41 @@ async function runPhysicalValidationR3(): Promise<void> {
     execAdb(['shell', 'input', 'tap', '360', '889'])
     await wait(4000)
     for (let i = 0; i < 15; i++) {
-      if (isScreenTextPresent('Usar interfaz de chat')) {
-        execAdb(['shell', 'input', 'tap', '360', '1343'])
+      if (tapScreenText('Usar interfaz de chat')) {
         await wait(1500)
         break
       }
-      if (isScreenTextPresent('Ahora no') || isScreenTextPresent('Actualiza Orca')) {
+      if (tapScreenText('Ahora no')) {
+        await wait(1500)
+        break
+      }
+      if (tapScreenText('Volver a hosts')) {
+        await wait(1500)
         break
       }
       await wait(1000)
-    }
-    if (isScreenTextPresent('Ahora no')) {
-      execAdb(['shell', 'input', 'tap', '360', '1434'])
-      await wait(2000)
     }
     await wait(1000)
     captureScreen('moto-g20-r3-02-paired.png', ARTIFACTS_DIR)
 
     await openManagedCenter(expectedFingerprint)
     await waitForScreenText('Centro Managed', 25000)
-    await wait(4000)
+    await wait(3000)
     for (let i = 0; i < 20; i++) {
-      if (
-        isScreenTextPresent('Emparejar Centro Managed') ||
-        isScreenTextPresent('PENDING_APPROVAL')
-      ) {
+      if (isScreenTextPresent('PENDING_APPROVAL')) {
         break
       }
-      if (isScreenTextPresent('Reconectar / Reintentar')) {
-        execAdb(['shell', 'input', 'tap', '200', '497'])
+      if (tapScreenText('Emparejar Centro Managed')) {
+        await wait(2000)
+        break
+      }
+      if (tapScreenText('Reconectar / Reintentar')) {
+        await wait(2000)
       }
       await wait(1500)
     }
     if (!isScreenTextPresent('PENDING_APPROVAL')) {
-      execAdb(['shell', 'input', 'tap', '200', '497'])
+      tapScreenText('Reconectar / Reintentar')
       await waitForScreenText('PENDING_APPROVAL', 25000)
     }
     captureScreen('moto-g20-r3-03-pending-approval.png', ARTIFACTS_DIR)

@@ -24,7 +24,11 @@ export async function spawnEngine(
     {
       cwd: repoPath,
       stdio: ['pipe', 'pipe', 'inherit'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1',
+        ORCA_HOST_SECRET_KEY: 'T1JDQV9URVNUX1NFRURfS0VZXzMyQllURVNfTEFCXzE='
+      }
     }
   )
 

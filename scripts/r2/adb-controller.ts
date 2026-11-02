@@ -40,6 +40,33 @@ export function isScreenTextPresent(text: string): boolean {
   }
 }
 
+export function tapScreenText(text: string): boolean {
+  try {
+    execAdb(['shell', 'rm', '-f', '/sdcard/dump_check.xml'], { allowFail: true })
+    const out = execAdb(['shell', 'uiautomator', 'dump', '/sdcard/dump_check.xml'], {
+      allowFail: true
+    })
+    if (!out.includes('dumped to:')) {
+      return false
+    }
+    const xml = execAdb(['shell', 'cat', '/sdcard/dump_check.xml'], { allowFail: true })
+    const esc = text.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+    const re = new RegExp(
+      `(?:text|content-desc)="[^"]*${esc}[^"]*"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`
+    )
+    const match = re.exec(xml)
+    if (!match) {
+      return false
+    }
+    const x = Math.round((Number.parseInt(match[1], 10) + Number.parseInt(match[3], 10)) / 2)
+    const y = Math.round((Number.parseInt(match[2], 10) + Number.parseInt(match[4], 10)) / 2)
+    execAdb(['shell', 'input', 'tap', String(x), String(y)])
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function waitForScreenText(text: string, timeoutMs = 30000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
