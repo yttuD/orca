@@ -37,6 +37,7 @@ import type { GitLabApi } from './api/gitlab-api'
 import type { BitbucketApi, HostedReviewApi } from './api/hosted-review-api'
 import type { JiraApi } from './api/jira-api'
 import type { LinearApi } from './api/linear-api'
+import type { ManagedBridgeApi } from './api/managed-bridge-types'
 import type { MobileApi } from './api/mobile-api'
 import type { NativeChatApi } from './api/native-chat-api'
 import type { OnboardingApi, StarNagApi } from './api/onboarding-api'
@@ -173,61 +174,10 @@ export type PreloadApi = {
   agentStatus: AgentStatusApi
   mobile: MobileApi
   speech: SpeechApi
-  managed: {
-    listProjects: () => Promise<{
-      ok: boolean
-      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-      error_code?: string
-      error_message?: string
-      projects: readonly {
-        readonly id: string
-        readonly name: string
-        readonly description?: string | null
-        readonly status: string
-        readonly mode: string
-        readonly created_at?: string | null
-        readonly updated_at?: string | null
-      }[]
-    }>
-    status: () => Promise<{ status: string; ok: boolean }>
-    listTasks: (projectId?: string) => Promise<{
-      ok: boolean
-      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-      error_code?: string
-      error_message?: string
-      project_id?: string
-      tasks: readonly {
-        readonly id: string
-        readonly project_id: string
-        readonly title: string
-        readonly status: string
-        readonly executor: string
-        readonly created_at?: string | null
-        readonly updated_at?: string | null
-      }[]
-    }>
-    getExecution: (
-      projectId: string,
-      taskId: string
-    ) => Promise<{
-      ok: boolean
-      status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-      error_code?: string
-      error_message?: string
-      execution?: {
-        readonly task_id: string
-        readonly project_id: string
-        readonly status: string
-        readonly executor: string
-        readonly attempt_id?: string | null
-        readonly lease_owner: string
-        readonly lease_generation: number
-        readonly last_activity?: string | null
-        readonly verdict?: string | null
-      } | null
-    }>
-  }
+  managed: ManagedBridgeApi
 }
+
+export type { ManagedBridgeApi } from './api/managed-bridge-types'
 
 export type {
   ClaudeUsageApi,

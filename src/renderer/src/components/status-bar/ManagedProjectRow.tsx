@@ -1,5 +1,6 @@
 import React from 'react'
 import { ChevronDown, ChevronRight, ListTodo, RefreshCw, Terminal } from 'lucide-react'
+import { ManagedTaskDetailCard } from './ManagedTaskDetailCard'
 
 export type ManagedProject = {
   readonly id: string
@@ -171,6 +172,7 @@ export function ManagedProjectRow({
                             Sin datos de ejecución disponibles.
                           </div>
                         )}
+                        <ManagedTaskDetailCard projectId={p.id} taskId={t.id} />
                       </div>
                     ) : null}
                   </div>

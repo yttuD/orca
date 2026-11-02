@@ -76,12 +76,12 @@ function resolveOperatorToken() {
   return resolveTokenFromPaths(['.operator_token', '.operator_token_staging'])
 }
 
-async function checkEngineRpc(testName, payload, token = null) {
+async function checkEngineRpc(testName, payload, token = null, extraHeaders = {}) {
   console.log(`\n[TEST] ${testName}`)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 3000)
 
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = { 'Content-Type': 'application/json', ...extraHeaders }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
@@ -286,6 +286,113 @@ async function run() {
   assert.equal(mutRes.data.effects_applied, false)
   assert.equal(mutRes.data.engine_state_unchanged, true)
   console.log('  -> PASS: Mutation request rejected with READ_ONLY_WORKSPACE')
+
+  // 10. Positive: Authenticated managed.getEvidence
+  const evidenceRes = await checkEngineRpc(
+    `10. Authenticated managed.getEvidence for task_id=${taskId}`,
+    {
+      request_id: 'test-auth-evidence-01',
+      method: 'managed.getEvidence',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId, task_id: taskId }
+    },
+    bridgeToken
+  )
+  assert.equal(evidenceRes.status, 200)
+  assert.equal(evidenceRes.data.ok, true)
+  const evidence = evidenceRes.data.data.evidence
+  assert.ok(evidence, 'Expected evidence object')
+  assert.equal(evidence.task_id, taskId)
+  assert.equal(evidence.project_id, projectId)
+  assert.ok(
+    ['AVAILABLE', 'NOT_FOUND', 'NOT_RUN', 'UNVERIFIED', 'ERROR'].includes(evidence.evidence_status)
+  )
+  assert.equal(typeof evidence.is_synthetic, 'boolean')
+  assert.ok(Array.isArray(evidence.checks))
+  assert.ok(Array.isArray(evidence.artifacts))
+  console.log(
+    `  -> PASS: getEvidence returned status=${evidence.evidence_status}, is_synthetic=${evidence.is_synthetic}`
+  )
+
+  // 11. Negative: Path traversal rejection in managed.getEvidence
+  const traversalRes = await checkEngineRpc(
+    '11. Path traversal rejection in managed.getEvidence (evidence_key=../../etc/passwd)',
+    {
+      request_id: 'test-evidence-traversal-01',
+      method: 'managed.getEvidence',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId, task_id: taskId, evidence_key: '../../etc/passwd' }
+    },
+    bridgeToken
+  )
+  assert.equal(traversalRes.data.ok, false)
+  assert.equal(traversalRes.data.error_code, 'INVALID_PARAMS')
+  console.log('  -> PASS: Path traversal attempt strictly rejected with INVALID_PARAMS')
+
+  // 12. Positive: Authenticated managed.presentReviewPacket
+  const packetRes = await checkEngineRpc(
+    `12. Authenticated managed.presentReviewPacket for task_id=${taskId}`,
+    {
+      request_id: 'test-auth-packet-01',
+      method: 'managed.presentReviewPacket',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId, task_id: taskId }
+    },
+    bridgeToken
+  )
+  assert.equal(packetRes.status, 200)
+  assert.equal(packetRes.data.ok, true)
+  const packet = packetRes.data.data.review_packet
+  assert.ok(packet, 'Expected review_packet object')
+  assert.equal(packet.task_id, taskId)
+  assert.equal(packet.project_id, projectId)
+  assert.ok(
+    ['AVAILABLE', 'NOT_FOUND', 'NOT_RUN', 'UNVERIFIED', 'ERROR'].includes(packet.packet_status)
+  )
+  assert.equal(typeof packet.is_synthetic, 'boolean')
+  assert.equal(typeof packet.checks_count, 'number')
+  assert.ok(typeof packet.markdown_packet === 'string')
+  console.log(
+    `  -> PASS: presentReviewPacket returned packet_status=${packet.packet_status}, is_synthetic=${packet.is_synthetic}`
+  )
+
+  // 13. Positive: Authenticated managed.listActivity
+  const activityRes = await checkEngineRpc(
+    `13. Authenticated managed.listActivity for project_id=${projectId}`,
+    {
+      request_id: 'test-auth-activity-01',
+      method: 'managed.listActivity',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId, task_id: taskId, limit: 10 }
+    },
+    bridgeToken
+  )
+  assert.equal(activityRes.status, 200)
+  assert.equal(activityRes.data.ok, true)
+  const activities = activityRes.data.data.activities
+  assert.ok(Array.isArray(activities), 'Expected activities array')
+  console.log(`  -> PASS: listActivity returned ${activities.length} activity transition(s)`)
+
+  // 14. Negative: Profile mismatch rejection
+  const profileMismatchRes = await checkEngineRpc(
+    '14. Profile mismatch rejection with header X-Managed-Profile: MISMATCHED_PROFILE',
+    {
+      request_id: 'test-profile-mismatch-01',
+      method: 'managed.listProjects',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: {}
+    },
+    bridgeToken,
+    { 'X-Managed-Profile': 'WRONG_PROFILE_NAME' }
+  )
+  assert.equal(profileMismatchRes.data.ok, false)
+  assert.equal(profileMismatchRes.data.error_code, 'AUTH_REQUIRED')
+  console.log('  -> PASS: Profile mismatch rejected with AUTH_REQUIRED')
 
   console.log('\n=== ALL AUTOMATED INTEGRATION ASSERTIONS PASSED (100% GREEN) ===\n')
 }

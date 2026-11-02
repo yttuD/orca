@@ -1,202 +1,36 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { ipcMain } from 'electron'
+import { callEngineRpc, resolveProfileAndToken, resolveBridgeToken } from './managed-resolver'
+import type {
+  ManagedProjectDTO,
+  ManagedTaskDTO,
+  ManagedExecutionDTO,
+  ManagedEvidenceDTO,
+  ManagedReviewPacketDTO,
+  ManagedActivityItemDTO,
+  ManagedProjectsResult,
+  ManagedTasksResult,
+  ManagedExecutionResult,
+  ManagedEvidenceResult,
+  ManagedReviewPacketResult,
+  ManagedActivityResult
+} from './managed-types'
 
-export type ManagedProjectDTO = {
-  readonly id: string
-  readonly name: string
-  readonly description?: string | null
-  readonly status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'UNKNOWN'
-  readonly mode: 'MANAGED' | 'FREE' | 'LOCAL'
-  readonly created_at?: string | null
-  readonly updated_at?: string | null
-}
-
-export type ManagedTaskDTO = {
-  readonly id: string
-  readonly project_id: string
-  readonly title: string
-  readonly status: string
-  readonly executor: string
-  readonly created_at?: string | null
-  readonly updated_at?: string | null
-}
-
-export type ManagedExecutionDTO = {
-  readonly task_id: string
-  readonly project_id: string
-  readonly status: string
-  readonly executor: string
-  readonly attempt_id?: string | null
-  readonly lease_owner: string
-  readonly lease_generation: number
-  readonly last_activity?: string | null
-  readonly verdict?: string | null
-}
-
-export type ManagedProjectsResult = {
-  readonly ok: boolean
-  readonly status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-  readonly error_code?: string
-  readonly error_message?: string
-  readonly projects: readonly ManagedProjectDTO[]
-}
-
-export type ManagedTasksResult = {
-  readonly ok: boolean
-  readonly status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-  readonly error_code?: string
-  readonly error_message?: string
-  readonly project_id?: string
-  readonly tasks: readonly ManagedTaskDTO[]
-}
-
-export type ManagedExecutionResult = {
-  readonly ok: boolean
-  readonly status: 'ONLINE' | 'OFFLINE' | 'ERROR'
-  readonly error_code?: string
-  readonly error_message?: string
-  readonly execution?: ManagedExecutionDTO | null
-}
-
-const PYTHON_ENGINE_URL = 'http://127.0.0.1:8765/api/managed/rpc'
-
-/**
- * Resolves the dedicated Managed bridge token securely from local process environment or disk.
- * The token is kept strictly in Electron Main and NEVER forwarded to renderer.
- * All machine-specific absolute paths have been eliminated in favor of standard relative
- * and environment discovery.
- */
-export function resolveBridgeToken(): string | null {
-  if (process.env.MANAGED_BRIDGE_TOKEN) {
-    return process.env.MANAGED_BRIDGE_TOKEN.trim()
-  }
-  if (process.env.MANAGED_BRIDGE_TOKEN_PATH && existsSync(process.env.MANAGED_BRIDGE_TOKEN_PATH)) {
-    try {
-      const content = readFileSync(process.env.MANAGED_BRIDGE_TOKEN_PATH, 'utf8').trim()
-      if (content) {
-        return content
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const baseNames = ['.managed_bridge_token', '.managed_bridge_token_staging']
-  const candidates: { path: string; mtime: number }[] = []
-  let currentDir = process.cwd()
-  for (let i = 0; i < 4; i++) {
-    const searchDirs = [
-      currentDir,
-      resolve(currentDir, 'workspaces', 'staging'),
-      resolve(currentDir, 'ORQUESTADOR-MASTER'),
-      resolve(currentDir, 'ORQUESTADOR-MASTER', 'workspaces', 'staging'),
-      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador'),
-      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador', 'workspaces', 'staging')
-    ]
-    for (const sDir of searchDirs) {
-      for (const name of baseNames) {
-        const full = resolve(sDir, name)
-        if (existsSync(full)) {
-          try {
-            const stat = statSync(full)
-            candidates.push({ path: full, mtime: stat.mtimeMs })
-          } catch {
-            // ignore
-          }
-        }
-      }
-    }
-    const parent = resolve(currentDir, '..')
-    if (parent === currentDir) {
-      break
-    }
-    currentDir = parent
-  }
-
-  candidates.sort((a, b) => b.mtime - a.mtime)
-  for (const c of candidates) {
-    try {
-      const content = readFileSync(c.path, 'utf8').trim()
-      if (content) {
-        return content
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return null
-}
-
-async function callEngineRpc(
-  method: string,
-  params: Record<string, unknown> = {}
-): Promise<Record<string, unknown>> {
-  const token = resolveBridgeToken()
-  const payload = {
-    request_id: `req-orca-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    method,
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: {
-      surface: 'renderer',
-      authenticated: Boolean(token),
-      capabilities: ['VIEW']
-    },
-    params
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 2500)
-
-  try {
-    const resp = await fetch(PYTHON_ENGINE_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    }).finally(() => clearTimeout(timeout))
-
-    if (!resp.ok) {
-      return {
-        ok: false,
-        error_code: `HTTP_${resp.status}`,
-        error_message: `Engine HTTP error: ${resp.statusText}`
-      }
-    }
-    return (await resp.json()) as Record<string, unknown>
-  } catch (err: unknown) {
-    clearTimeout(timeout)
-    return {
-      ok: false,
-      error_code: 'ENGINE_OFFLINE',
-      error_message: err instanceof Error ? err.message : 'Engine connection failed'
-    }
-  }
-}
+export * from './managed-types'
+export { resolveProfileAndToken, resolveBridgeToken }
 
 export async function fetchManagedProjectsFromEngine(): Promise<ManagedProjectsResult> {
   const data = await callEngineRpc('managed.listProjects', {})
-
   if (!data.ok) {
-    const isOffline = data.error_code === 'ENGINE_OFFLINE'
     return {
       ok: false,
-      status: isOffline ? 'OFFLINE' : 'ERROR',
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
       error_code: String(data.error_code || 'RPC_ERROR'),
       error_message: String(data.error_message || 'RPC method rejected'),
       projects: []
     }
   }
-
-  const respPayload = (data.data as Record<string, unknown> | undefined) || {}
-  const rawProjects = Array.isArray(respPayload.projects) ? respPayload.projects : []
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawProjects = Array.isArray(payload.projects) ? payload.projects : []
   const projects: ManagedProjectDTO[] = rawProjects.map((rawItem: unknown) => {
     const p = (rawItem as Record<string, unknown>) || {}
     return {
@@ -209,32 +43,24 @@ export async function fetchManagedProjectsFromEngine(): Promise<ManagedProjectsR
       updated_at: typeof p.updated_at === 'string' ? p.updated_at : null
     }
   })
-
-  return {
-    ok: true,
-    status: 'ONLINE',
-    projects
-  }
+  return { ok: true, status: 'ONLINE', projects }
 }
 
 export async function fetchManagedTasksFromEngine(projectId?: string): Promise<ManagedTasksResult> {
   const params = projectId ? { project_id: projectId } : {}
   const data = await callEngineRpc('managed.listTasks', params)
-
   if (!data.ok) {
-    const isOffline = data.error_code === 'ENGINE_OFFLINE'
     return {
       ok: false,
-      status: isOffline ? 'OFFLINE' : 'ERROR',
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
       error_code: String(data.error_code || 'RPC_ERROR'),
       error_message: String(data.error_message || 'RPC method rejected'),
       project_id: projectId,
       tasks: []
     }
   }
-
-  const respPayload = (data.data as Record<string, unknown> | undefined) || {}
-  const rawTasks = Array.isArray(respPayload.tasks) ? respPayload.tasks : []
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawTasks = Array.isArray(payload.tasks) ? payload.tasks : []
   const tasks: ManagedTaskDTO[] = rawTasks.map((rawItem: unknown) => {
     const t = (rawItem as Record<string, unknown>) || {}
     return {
@@ -247,13 +73,7 @@ export async function fetchManagedTasksFromEngine(projectId?: string): Promise<M
       updated_at: typeof t.updated_at === 'string' ? t.updated_at : null
     }
   })
-
-  return {
-    ok: true,
-    status: 'ONLINE',
-    project_id: projectId,
-    tasks
-  }
+  return { ok: true, status: 'ONLINE', project_id: projectId, tasks }
 }
 
 export async function fetchManagedExecutionFromEngine(
@@ -264,28 +84,20 @@ export async function fetchManagedExecutionFromEngine(
     project_id: projectId,
     task_id: taskId
   })
-
   if (!data.ok) {
-    const isOffline = data.error_code === 'ENGINE_OFFLINE'
     return {
       ok: false,
-      status: isOffline ? 'OFFLINE' : 'ERROR',
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
       error_code: String(data.error_code || 'RPC_ERROR'),
       error_message: String(data.error_message || 'RPC method rejected'),
       execution: null
     }
   }
-
-  const respPayload = (data.data as Record<string, unknown> | undefined) || {}
-  const rawExec = (respPayload.execution as Record<string, unknown> | undefined) || null
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawExec = (payload.execution as Record<string, unknown> | undefined) || null
   if (!rawExec) {
-    return {
-      ok: true,
-      status: 'ONLINE',
-      execution: null
-    }
+    return { ok: true, status: 'ONLINE', execution: null }
   }
-
   const execution: ManagedExecutionDTO = {
     task_id: String(rawExec.task_id || taskId),
     project_id: String(rawExec.project_id || projectId),
@@ -297,19 +109,153 @@ export async function fetchManagedExecutionFromEngine(
     last_activity: typeof rawExec.last_activity === 'string' ? rawExec.last_activity : null,
     verdict: typeof rawExec.verdict === 'string' ? rawExec.verdict : null
   }
+  return { ok: true, status: 'ONLINE', execution }
+}
 
-  return {
-    ok: true,
-    status: 'ONLINE',
-    execution
+export async function fetchManagedEvidenceFromEngine(
+  projectId: string,
+  taskId: string,
+  attemptId?: string,
+  evidenceKey?: string
+): Promise<ManagedEvidenceResult> {
+  const data = await callEngineRpc('managed.getEvidence', {
+    project_id: projectId,
+    task_id: taskId,
+    attempt_id: attemptId,
+    evidence_key: evidenceKey
+  })
+  if (!data.ok) {
+    return {
+      ok: false,
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
+      error_code: String(data.error_code || 'RPC_ERROR'),
+      error_message: String(data.error_message || 'RPC method rejected'),
+      evidence: null
+    }
   }
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawEv = (payload.evidence as Record<string, unknown> | undefined) || null
+  if (!rawEv) {
+    return { ok: true, status: 'ONLINE', evidence: null }
+  }
+  const evidence: ManagedEvidenceDTO = {
+    project_id: String(rawEv.project_id || projectId),
+    task_id: String(rawEv.task_id || taskId),
+    attempt_id: typeof rawEv.attempt_id === 'string' ? rawEv.attempt_id : null,
+    evidence_status:
+      (rawEv.evidence_status as ManagedEvidenceDTO['evidence_status']) || 'NOT_FOUND',
+    execution_mode: String(rawEv.execution_mode || 'REAL'),
+    is_synthetic: Boolean(rawEv.is_synthetic),
+    checks: Array.isArray(rawEv.checks) ? (rawEv.checks as readonly Record<string, unknown>[]) : [],
+    artifacts: Array.isArray(rawEv.artifacts) ? rawEv.artifacts.map(String) : [],
+    canonical_sha256: typeof rawEv.canonical_sha256 === 'string' ? rawEv.canonical_sha256 : null,
+    result_sha: typeof rawEv.result_sha === 'string' ? rawEv.result_sha : null,
+    evidence_items: Array.isArray(rawEv.evidence_items)
+      ? (rawEv.evidence_items as ManagedEvidenceDTO['evidence_items'])
+      : [],
+    raw_evidence: (rawEv.raw_evidence as Record<string, unknown> | undefined) || null
+  }
+  return { ok: true, status: 'ONLINE', evidence }
+}
+
+export async function fetchManagedReviewPacketFromEngine(
+  projectId: string,
+  taskId: string,
+  attemptId?: string
+): Promise<ManagedReviewPacketResult> {
+  const data = await callEngineRpc('managed.presentReviewPacket', {
+    project_id: projectId,
+    task_id: taskId,
+    attempt_id: attemptId
+  })
+  if (!data.ok) {
+    return {
+      ok: false,
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
+      error_code: String(data.error_code || 'RPC_ERROR'),
+      error_message: String(data.error_message || 'RPC method rejected'),
+      review_packet: null
+    }
+  }
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawPkt = (payload.review_packet as Record<string, unknown> | undefined) || null
+  if (!rawPkt) {
+    return { ok: true, status: 'ONLINE', review_packet: null }
+  }
+  const review_packet: ManagedReviewPacketDTO = {
+    project_id: String(rawPkt.project_id || projectId),
+    task_id: String(rawPkt.task_id || taskId),
+    attempt_id: typeof rawPkt.attempt_id === 'string' ? rawPkt.attempt_id : null,
+    packet_status: (rawPkt.packet_status as ManagedReviewPacketDTO['packet_status']) || 'NOT_FOUND',
+    is_synthetic: Boolean(rawPkt.is_synthetic),
+    execution_type: String(rawPkt.execution_type || 'REAL'),
+    status: String(rawPkt.status || 'NOT_RUN'),
+    base_sha: typeof rawPkt.base_sha === 'string' ? rawPkt.base_sha : null,
+    result_sha: typeof rawPkt.result_sha === 'string' ? rawPkt.result_sha : null,
+    canonical_sha256: typeof rawPkt.canonical_sha256 === 'string' ? rawPkt.canonical_sha256 : null,
+    started_at: typeof rawPkt.started_at === 'string' ? rawPkt.started_at : null,
+    finished_at: typeof rawPkt.finished_at === 'string' ? rawPkt.finished_at : null,
+    process_exit_code:
+      typeof rawPkt.process_exit_code === 'number' ? rawPkt.process_exit_code : null,
+    verdict: typeof rawPkt.verdict === 'string' ? rawPkt.verdict : null,
+    checks_count: Number(rawPkt.checks_count || 0),
+    markdown_packet: typeof rawPkt.markdown_packet === 'string' ? rawPkt.markdown_packet : null
+  }
+  return { ok: true, status: 'ONLINE', review_packet }
+}
+
+export async function fetchManagedActivityFromEngine(
+  projectId: string,
+  taskId?: string,
+  limit: number = 20,
+  beforeId?: number
+): Promise<ManagedActivityResult> {
+  const data = await callEngineRpc('managed.listActivity', {
+    project_id: projectId,
+    task_id: taskId,
+    limit,
+    before_id: beforeId
+  })
+  if (!data.ok) {
+    return {
+      ok: false,
+      status: data.error_code === 'ENGINE_OFFLINE' ? 'OFFLINE' : 'ERROR',
+      error_code: String(data.error_code || 'RPC_ERROR'),
+      error_message: String(data.error_message || 'RPC method rejected'),
+      project_id: projectId,
+      activities: []
+    }
+  }
+  const payload = (data.data as Record<string, unknown> | undefined) || {}
+  const rawActs = Array.isArray(payload.activities) ? payload.activities : []
+  const activities: ManagedActivityItemDTO[] = rawActs.map((item: unknown) => {
+    const a = (item as Record<string, unknown>) || {}
+    return {
+      id: typeof a.id === 'number' ? a.id : undefined,
+      task_id: String(a.task_id || taskId || ''),
+      attempt_id: typeof a.attempt_id === 'string' ? a.attempt_id : null,
+      from_state: String(a.from_state || ''),
+      to_state: String(a.to_state || ''),
+      reason: String(a.reason || ''),
+      timestamp: typeof a.timestamp === 'string' ? a.timestamp : null
+    }
+  })
+  return { ok: true, status: 'ONLINE', project_id: projectId, activities }
 }
 
 export function registerManagedHandlers(): () => void {
-  ipcMain.removeHandler('managed:listProjects')
-  ipcMain.removeHandler('managed:status')
-  ipcMain.removeHandler('managed:listTasks')
-  ipcMain.removeHandler('managed:getExecution')
+  const handlers = [
+    'managed:listProjects',
+    'managed:status',
+    'managed:listTasks',
+    'managed:getExecution',
+    'managed:getEvidence',
+    'managed:presentReviewPacket',
+    'managed:listActivity'
+  ]
+  for (const h of handlers) {
+    ipcMain.removeHandler(h)
+  }
 
   ipcMain.handle('managed:listProjects', async () => {
     return await fetchManagedProjectsFromEngine()
@@ -317,7 +263,8 @@ export function registerManagedHandlers(): () => void {
 
   ipcMain.handle('managed:status', async () => {
     const res = await fetchManagedProjectsFromEngine()
-    return { status: res.status, ok: res.ok }
+    const cfg = resolveProfileAndToken()
+    return { status: res.status, ok: res.ok, profile: cfg.profile }
   })
 
   ipcMain.handle('managed:listTasks', async (_event, projectId?: string) => {
@@ -328,10 +275,30 @@ export function registerManagedHandlers(): () => void {
     return await fetchManagedExecutionFromEngine(projectId, taskId)
   })
 
+  ipcMain.handle(
+    'managed:getEvidence',
+    async (_event, projectId: string, taskId: string, attemptId?: string, evidenceKey?: string) => {
+      return await fetchManagedEvidenceFromEngine(projectId, taskId, attemptId, evidenceKey)
+    }
+  )
+
+  ipcMain.handle(
+    'managed:presentReviewPacket',
+    async (_event, projectId: string, taskId: string, attemptId?: string) => {
+      return await fetchManagedReviewPacketFromEngine(projectId, taskId, attemptId)
+    }
+  )
+
+  ipcMain.handle(
+    'managed:listActivity',
+    async (_event, projectId: string, taskId?: string, limit?: number, beforeId?: number) => {
+      return await fetchManagedActivityFromEngine(projectId, taskId, limit, beforeId)
+    }
+  )
+
   return () => {
-    ipcMain.removeHandler('managed:listProjects')
-    ipcMain.removeHandler('managed:status')
-    ipcMain.removeHandler('managed:listTasks')
-    ipcMain.removeHandler('managed:getExecution')
+    for (const h of handlers) {
+      ipcMain.removeHandler(h)
+    }
   }
 }
