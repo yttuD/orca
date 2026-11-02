@@ -113,7 +113,7 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
         }
         return null
       },
-      getState: () => ({ kind: connectionKind })
+      getState: () => connectionKind
     } as unknown as RpcClient
 
     const provider = new EncryptedRpcManagedDataProvider(mockRpcClient, TEST_CREDENTIAL)
@@ -150,7 +150,7 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
         }
         return { projects: [] }
       },
-      getState: () => ({ kind: 'connected' })
+      getState: () => 'connected'
     } as unknown as RpcClient
 
     // Unpaired
@@ -282,7 +282,7 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
   it('12. requestDevicePairing enforces confirmedFingerprint strictly', async () => {
     const mockRpcClient = {
       request: vi.fn(async () => ({ ok: true, credential: TEST_CREDENTIAL })),
-      getState: () => ({ kind: 'connected' })
+      getState: () => 'connected'
     } as unknown as RpcClient
     const prov = new EncryptedRpcManagedDataProvider(mockRpcClient, null)
     await expect(

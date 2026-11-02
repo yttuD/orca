@@ -5,7 +5,7 @@ import { ManagedCenterView } from '../src/managed/ManagedCenterView'
 import { EncryptedRpcManagedDataProvider } from '../src/managed/data-provider'
 import { useHostClient } from '../src/transport/host-client-hooks'
 import { loadHosts } from '../src/transport/host-store'
-import { loadStoredCredential } from '../src/managed/trusted-host-store'
+import { loadStoredCredential, saveStoredCredential } from '../src/managed/trusted-host-store'
 import type { MobileConnectionStatus, MobileDeviceCredential } from '../src/managed/types'
 import type { HostProfile } from '../src/transport/types'
 
@@ -78,8 +78,8 @@ export default function NativeManagedRoute(): React.JSX.Element {
       setConnectionStatus('CONNECTING')
       return
     }
-    if (state.kind !== 'connected') {
-      setConnectionStatus(state.kind === 'connecting' ? 'CONNECTING' : 'OFFLINE')
+    if (state !== 'connected') {
+      setConnectionStatus(state === 'connecting' ? 'CONNECTING' : 'OFFLINE')
       return
     }
 
@@ -134,13 +134,17 @@ export default function NativeManagedRoute(): React.JSX.Element {
         pollTimer = null
       }
     }
-  }, [provider, client, state.kind, credential, activeHost])
+  }, [provider, client, state, credential, activeHost])
 
   const handlePairOrRegister = async () => {
-    if (activeHost && client && state.kind === 'connected') {
+    if (activeHost && client && state === 'connected') {
       try {
         setConnectionStatus('CONNECTING')
-        const hostIdentity = (await client.request('managed.getHostIdentity', {})) as {
+        const hostIdentityRes = await client.sendRequest('managed.getHostIdentity', {})
+        if (!hostIdentityRes.ok) {
+          throw new Error(hostIdentityRes.error.message || 'HOST_IDENTITY_FAILED')
+        }
+        const hostIdentity = hostIdentityRes.result as {
           fingerprint?: string
           host_fingerprint?: string
           host_id?: string
@@ -150,15 +154,19 @@ export default function NativeManagedRoute(): React.JSX.Element {
           throw new Error('HOST_IDENTITY_UNAVAILABLE')
         }
         const devId = `motog20-${Date.now().toString(36)}`
-        const regRes = (await client.request('managed.registerDevice', {
+        const regRes = await client.sendRequest('managed.registerDevice', {
           deviceId: devId,
           deviceName: 'Motorola Moto G20',
           clientNonce: `cnonce-${Date.now()}`,
           confirmedFingerprint: hostFp
-        })) as { ok: boolean; credential: MobileDeviceCredential }
-        if (regRes.ok && regRes.credential) {
-          await saveStoredCredential(regRes.credential, activeHost.id)
-          setCredential(regRes.credential)
+        })
+        if (!regRes.ok) {
+          throw new Error(regRes.error.message || 'REGISTRATION_FAILED')
+        }
+        const regData = regRes.result as { ok: boolean; credential: MobileDeviceCredential }
+        if (regData.ok && regData.credential) {
+          await saveStoredCredential(regData.credential, activeHost.id)
+          setCredential(regData.credential)
           setConnectionStatus('PENDING_APPROVAL')
         } else {
           setConnectionStatus('AUTH_REQUIRED')

@@ -42,9 +42,9 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       return 'AUTH_REQUIRED'
     }
     const state = this.rpcClient.getState()
-    if (state.kind !== 'connected') {
+    if (state !== 'connected') {
       this.authenticated = false
-      return state.kind === 'connecting' ? 'CONNECTING' : 'OFFLINE'
+      return state === 'connecting' ? 'CONNECTING' : 'OFFLINE'
     }
     if (this.authError) {
       if (
@@ -124,9 +124,9 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       return 'AUTH_REQUIRED'
     }
     const state = this.rpcClient.getState()
-    if (state.kind !== 'connected') {
+    if (state !== 'connected') {
       this.authenticated = false
-      return state.kind === 'connecting' ? 'CONNECTING' : 'OFFLINE'
+      return state === 'connecting' ? 'CONNECTING' : 'OFFLINE'
     }
 
     try {
@@ -281,10 +281,8 @@ export class MockManagedDataProvider implements ManagedDataProvider {
   }
 
   async getEvidence(projectId: string, taskId: string): Promise<ManagedEvidenceDTO | null> {
-    return (
-      SYNTHETIC_MANAGED_EVIDENCE.find((e) => e.project_id === projectId && e.task_id === taskId) ??
-      null
-    )
+    const ev = SYNTHETIC_MANAGED_EVIDENCE[taskId]
+    return ev && ev.project_id === projectId ? ev : null
   }
 
   getConnectionStatus(): MobileConnectionStatus {
