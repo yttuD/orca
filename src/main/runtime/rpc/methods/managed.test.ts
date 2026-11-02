@@ -138,9 +138,12 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     expect(res.error).toBeDefined()
   })
 
-  it('6. contains strictly positive allowlist of 6 methods, zero mutations', () => {
+  it('6. contains strictly positive allowlist of methods, zero mutations', () => {
     const methodNames = MANAGED_RPC_METHODS.map((m) => m.name)
     expect(methodNames).toEqual([
+      'managed.getHostIdentity',
+      'managed.registerDevice',
+      'managed.checkDeviceStatus',
       'managed.listProjects',
       'managed.listTasks',
       'managed.getExecution',

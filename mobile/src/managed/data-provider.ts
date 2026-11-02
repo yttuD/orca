@@ -47,6 +47,13 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       return state.kind === 'connecting' ? 'CONNECTING' : 'OFFLINE'
     }
     if (this.authError) {
+      if (
+        this.authError.includes('PENDING_APPROVAL') ||
+        this.authError.includes('PENDING_OPERATOR_APPROVAL') ||
+        this.authError.toUpperCase().includes('PENDING')
+      ) {
+        return 'PENDING_APPROVAL'
+      }
       return 'AUTH_REQUIRED'
     }
     if (!this.authenticated) {
@@ -217,6 +224,30 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       this.handleRpcError(err)
       throw err
     }
+  }
+
+  async requestDevicePairing(options: {
+    offerId?: string
+    deviceId: string
+    deviceName: string
+    confirmedFingerprint?: string
+  }): Promise<MobileDeviceCredential> {
+    const clientNonce = `cnonce-${Date.now()}-${generateCsprngHex(8)}`
+    const params = {
+      offerId: options.offerId,
+      deviceId: options.deviceId,
+      deviceName: options.deviceName,
+      clientNonce,
+      confirmedFingerprint: options.confirmedFingerprint
+    }
+    const res = (await this.executeRpc('managed.registerDevice', params)) as {
+      ok: boolean
+      credential?: MobileDeviceCredential
+    }
+    if (!res || !res.credential) {
+      throw new Error('DEVICE_REGISTRATION_FAILED')
+    }
+    return res.credential
   }
 
   private handleRpcError(err: unknown): void {

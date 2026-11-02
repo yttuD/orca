@@ -122,6 +122,7 @@ export type MobileDeviceCredential = {
   readonly role: MobileDeviceRole
   readonly revoked: boolean
   readonly nonce: string
+  readonly status?: string
 }
 
 export type PairingOffer = {
@@ -154,6 +155,7 @@ export type PairingHandshake = {
 export type MobileConnectionStatus =
   | 'UNPAIRED'
   | 'CONNECTING'
+  | 'PENDING_APPROVAL'
   | 'ONLINE'
   | 'OFFLINE'
   | 'AUTH_REQUIRED'

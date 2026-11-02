@@ -35,7 +35,11 @@ export function createMemoryStorageDriver(): SecureStorageDriver {
 
 async function safeGetItem(key: string): Promise<string | null> {
   if (testStorageDriver) {
-    return testStorageDriver.getItem(key)
+    try {
+      return await testStorageDriver.getItem(key)
+    } catch {
+      return null
+    }
   }
   try {
     // oxlint-disable-next-line typescript/no-require-imports
@@ -64,8 +68,12 @@ async function safeGetItem(key: string): Promise<string | null> {
 
 async function safeSetItem(key: string, value: string): Promise<boolean> {
   if (testStorageDriver) {
-    await testStorageDriver.setItem(key, value)
-    return true
+    try {
+      await testStorageDriver.setItem(key, value)
+      return true
+    } catch {
+      return false
+    }
   }
   try {
     // oxlint-disable-next-line typescript/no-require-imports
@@ -99,7 +107,11 @@ async function safeSetItem(key: string, value: string): Promise<boolean> {
 
 async function safeDeleteItem(key: string): Promise<void> {
   if (testStorageDriver) {
-    await testStorageDriver.deleteItem(key)
+    try {
+      await testStorageDriver.deleteItem(key)
+    } catch {
+      // Ignore deletion errors on fail-closed cleanup
+    }
     return
   }
   try {
@@ -164,14 +176,21 @@ export class SecureTrustedHostStore implements TrustedHostStore {
     const val = await safeGetItem(key)
     if (val) {
       this.memoryCache.set(hostId, val)
+    } else {
+      this.memoryCache.delete(hostId)
     }
     return val
   }
 
   async persistKey(hostId: string, publicKey: string): Promise<boolean> {
-    this.memoryCache.set(hostId, publicKey)
     const key = `${STORAGE_PREFIX}${hostId}`
-    return safeSetItem(key, publicKey)
+    const success = await safeSetItem(key, publicKey)
+    if (success) {
+      this.memoryCache.set(hostId, publicKey)
+    } else {
+      this.memoryCache.delete(hostId)
+    }
+    return success
   }
 
   async removeTrustedKey(hostId: string): Promise<void> {
@@ -186,7 +205,7 @@ export class SecureTrustedHostStore implements TrustedHostStore {
     independentFingerprint?: string,
     allowOverride = false
   ): Promise<{ ok: boolean; error?: string }> {
-    const existing = (await this.loadPersistentKey(hostId)) ?? this.getTrustedHostKey(hostId)
+    const existing = await this.loadPersistentKey(hostId)
     if (existing && existing !== hostPublicKeyB64) {
       if (!allowOverride) {
         return { ok: false, error: 'HOST_KEY_SUBSTITUTION_REJECTED' }
@@ -204,6 +223,7 @@ export class SecureTrustedHostStore implements TrustedHostStore {
 
     const persisted = await this.persistKey(hostId, hostPublicKeyB64)
     if (!persisted) {
+      this.memoryCache.delete(hostId)
       return { ok: false, error: 'STORAGE_PERSISTENCE_FAILED' }
     }
     return { ok: true }

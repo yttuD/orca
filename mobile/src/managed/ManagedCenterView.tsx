@@ -52,7 +52,11 @@ export function ManagedCenterView({
       setEvidence(null)
       setSelectedProjectId('')
       setSelectedTaskId('')
-      setErrorState(`Conexión no disponible: ${connectionStatus}`)
+      if (connectionStatus === 'PENDING_APPROVAL') {
+        setErrorState('Esperando autorización del operador en Windows...')
+      } else {
+        setErrorState(`Conexión no disponible: ${connectionStatus}`)
+      }
       return
     }
 

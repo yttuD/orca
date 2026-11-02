@@ -31,6 +31,8 @@ export default function NativeManagedRoute(): React.JSX.Element {
           if (mounted && cred) {
             if (cred.revoked || Date.now() > cred.expiresAt) {
               setConnectionStatus('AUTH_REQUIRED')
+            } else if (cred.status === 'PENDING_APPROVAL') {
+              setConnectionStatus('PENDING_APPROVAL')
             } else {
               setConnectionStatus('CONNECTING')
             }
@@ -82,14 +84,44 @@ export default function NativeManagedRoute(): React.JSX.Element {
     }
 
     let active = true
-    setConnectionStatus('CONNECTING')
-    provider.probeAuthentication().then((status) => {
-      if (active) {
-        setConnectionStatus(status)
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+
+    const checkAuth = async () => {
+      try {
+        setConnectionStatus('CONNECTING')
+        const st = await provider.probeAuthentication()
+        if (!active) {
+          return
+        }
+        setConnectionStatus(st)
+        if (st === 'PENDING_APPROVAL') {
+          pollTimer = setInterval(async () => {
+            if (!active) {
+              return
+            }
+            const nextSt = await provider.probeAuthentication()
+            if (active) {
+              setConnectionStatus(nextSt)
+              if (nextSt === 'ONLINE' && pollTimer) {
+                clearInterval(pollTimer)
+                pollTimer = null
+              }
+            }
+          }, 2000)
+        }
+      } catch {
+        if (active) {
+          setConnectionStatus('AUTH_REQUIRED')
+        }
       }
-    })
+    }
+
+    void checkAuth()
     return () => {
       active = false
+      if (pollTimer) {
+        clearInterval(pollTimer)
+      }
     }
   }, [provider, client, state.kind, credential, activeHost])
 

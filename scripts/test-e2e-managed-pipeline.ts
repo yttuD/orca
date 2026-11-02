@@ -23,7 +23,7 @@ import { parsePairingCode } from '../src/shared/pairing'
 import { AuthenticE2eeMobileRpcClient } from './e2ee-test-client'
 import {
   checkLoopbackOnly,
-  performFastApiPairing,
+  approveDeviceAsOperator,
   verifyRealHostTrustPinning,
   verifyRealQueries,
   verifyRealSecurityBoundaries
@@ -121,7 +121,7 @@ async function runAuthenticE2eTest(): Promise<void> {
       '  --> PASS [HOST_TRUST_PASS]: Fail-closed store & independent fingerprint pinning verified'
     )
 
-    console.log('[4/7] Registering device with Python FastAPI engine and saving credential...')
+    console.log('[4/7] Connecting mobile client to Orca Desktop Runtime via E2EE WebSocket...')
     let httpReady = false
     for (let i = 0; i < 40; i++) {
       try {
@@ -138,28 +138,6 @@ async function runAuthenticE2eTest(): Promise<void> {
       throw new Error('FastAPI engine did not start in time')
     }
 
-    const fastApiAuth = await performFastApiPairing(
-      PYTHON_PORT,
-      offerId,
-      parsedOffer.pairedDeviceId || 'pixel-8-e2e',
-      opToken
-    )
-
-    const credential: MobileDeviceCredential = {
-      deviceId: parsedOffer.pairedDeviceId || 'pixel-8-e2e',
-      deviceName: 'Pixel 8 E2E Pro',
-      deviceToken: fastApiAuth.deviceToken,
-      hostId: 'orca-desktop-main',
-      hostAddress: `127.0.0.1:${ORCA_RPC_PORT}`,
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 86400000,
-      role: 'MOBILE_READONLY',
-      revoked: false,
-      nonce: 'nonce-init'
-    }
-    await saveStoredCredential(credential)
-
-    console.log('[5/7] Connecting mobile client to Orca Desktop Runtime via E2EE WebSocket...')
     client = new AuthenticE2eeMobileRpcClient(
       parsedOffer.endpoint,
       parsedOffer.deviceToken,
@@ -167,11 +145,72 @@ async function runAuthenticE2eTest(): Promise<void> {
     )
     await client.connect()
 
-    const provider = new EncryptedRpcManagedDataProvider(client as unknown as RpcClient, credential)
-    const probeStatus = await provider.probeAuthentication()
-    if (probeStatus !== 'ONLINE') {
-      throw new Error(`Expected ONLINE, got: ${probeStatus}`)
+    console.log(
+      '[5/7] Registering device via Desktop RPC (managed.registerDevice) & auto-approval...'
+    )
+    const hostIdentity = (await client.request('managed.getHostIdentity', {})) as {
+      fingerprint?: string
+      host_fingerprint?: string
+      host_id?: string
     }
+    const hostFp = hostIdentity?.fingerprint || hostIdentity?.host_fingerprint
+    if (!hostFp) {
+      throw new Error('Host identity missing fingerprint')
+    }
+
+    const deviceId = parsedOffer.pairedDeviceId || 'pixel-8-e2e'
+
+    // Negative check: Mismatched fingerprint is rejected
+    let mismatchRejected = false
+    try {
+      await client.request('managed.registerDevice', {
+        offerId,
+        deviceId,
+        deviceName: 'Pixel 8 E2E Pro',
+        clientNonce: `cnonce-${Date.now()}`,
+        confirmedFingerprint: 'invalid-fingerprint-ref'
+      })
+    } catch {
+      mismatchRejected = true
+    }
+    if (!mismatchRejected) {
+      throw new Error('Expected FINGERPRINT_MISMATCH rejection on bad reference')
+    }
+    console.log('  --> PASS [FINGERPRINT_VERIFICATION_PASS]: Explicit host fingerprint checked')
+
+    const regRes = (await client.request('managed.registerDevice', {
+      offerId,
+      deviceId,
+      deviceName: 'Pixel 8 E2E Pro',
+      clientNonce: `cnonce-${Date.now()}`,
+      confirmedFingerprint: hostFp
+    })) as { ok: boolean; credential: MobileDeviceCredential }
+
+    if (!regRes.ok || !regRes.credential) {
+      throw new Error(`Device registration via RPC failed: ${JSON.stringify(regRes)}`)
+    }
+    const credential = regRes.credential
+    await saveStoredCredential(credential)
+
+    const provider = new EncryptedRpcManagedDataProvider(client as unknown as RpcClient, credential)
+    const initialProbe = await provider.probeAuthentication()
+    if (initialProbe !== 'PENDING_APPROVAL') {
+      throw new Error(`Expected PENDING_APPROVAL, got: ${initialProbe}`)
+    }
+    console.log(
+      '  --> PASS [PENDING_APPROVAL_VERIFIED]: Mobile state is PENDING_APPROVAL before approval'
+    )
+
+    const fastApiAuth = await approveDeviceAsOperator(PYTHON_PORT, deviceId, opToken)
+    console.log('  --> PASS [WINDOWS_OPERATOR_APPROVAL]: Device approved by Windows operator')
+
+    const approvedProbe = await provider.probeAuthentication()
+    if (approvedProbe !== 'ONLINE') {
+      throw new Error(`Expected ONLINE, got: ${approvedProbe}`)
+    }
+    console.log(
+      '  --> PASS [AUTOMATIC_TRANSITION_PASS]: PENDING_APPROVAL -> AUTHORIZED -> ONLINE confirmed'
+    )
 
     console.log('[6/7] Querying real stores through Orca Desktop Runtime...')
     const authPayload = {

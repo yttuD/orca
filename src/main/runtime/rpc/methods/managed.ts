@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { defineMethod, type RpcContext } from '../core'
-import { callEngineRpc, type ManagedCallerAuth } from '../../../ipc/managed-resolver'
+import {
+  callEngineRpc,
+  callEngineRest,
+  type ManagedCallerAuth
+} from '../../../ipc/managed-resolver'
 
 const ManagedAuthFields = {
   deviceId: z.string().optional(),
@@ -22,6 +26,21 @@ const ManagedAuthFields = {
 }
 
 const ManagedEmptyParamsSchema = z.object({ ...ManagedAuthFields }).optional()
+const ManagedRegisterParamsSchema = z
+  .object({
+    offerId: z.string().optional(),
+    offer_id: z.string().optional(),
+    deviceId: z.string().optional(),
+    device_id: z.string().optional(),
+    deviceName: z.string().optional(),
+    device_name: z.string().optional(),
+    clientNonce: z.string().optional(),
+    client_nonce: z.string().optional(),
+    confirmedFingerprint: z.string().optional(),
+    confirmed_fingerprint: z.string().optional(),
+    ...ManagedAuthFields
+  })
+  .optional()
 
 const ManagedProjectScopedParamsSchema = z
   .object({
@@ -109,113 +128,183 @@ function extractCallerAuth(
   }
 }
 
+async function forwardRpc(
+  method: string,
+  args: Record<string, unknown>,
+  params: Record<string, unknown> | undefined,
+  ctx?: RpcContext
+): Promise<Record<string, unknown>> {
+  const auth = extractCallerAuth(params, ctx)
+  const res = await callEngineRpc(method, args, auth)
+  if (!res.ok) {
+    const detail = res.error_message
+      ? `${res.error_code || 'RPC_FAILED'}: ${res.error_message}`
+      : String(res.error_code || 'RPC_FAILED')
+    throw new Error(detail)
+  }
+  return (res.data as Record<string, unknown>) ?? {}
+}
+
 export const MANAGED_RPC_METHODS = [
+  defineMethod({
+    name: 'managed.getHostIdentity',
+    permission: 'workspace',
+    params: ManagedEmptyParamsSchema,
+    handler: async () => {
+      const res = await callEngineRest('/api/managed/mobile/host-identity')
+      if (!res.ok) {
+        throw new Error(String(res.error || 'HOST_IDENTITY_UNAVAILABLE'))
+      }
+      const d = res.data ?? {}
+      return { ...d, fingerprint: d.fingerprint || d.host_fingerprint }
+    }
+  }),
+  defineMethod({
+    name: 'managed.registerDevice',
+    permission: 'workspace',
+    params: ManagedRegisterParamsSchema,
+    handler: async (params) => {
+      const offerId = params?.offerId || params?.offer_id
+      const deviceId = params?.deviceId || params?.device_id
+      const deviceName = params?.deviceName || params?.device_name
+      const clientNonce = params?.clientNonce || params?.client_nonce
+      const confirmedFp = params?.confirmedFingerprint || params?.confirmed_fingerprint
+      if (!deviceId || !deviceName || !clientNonce) {
+        throw new Error('MISSING_REGISTRATION_FIELDS')
+      }
+      const hostIdRes = await callEngineRest('/api/managed/mobile/host-identity')
+      const hostFp = String(hostIdRes.data?.fingerprint || hostIdRes.data?.host_fingerprint || '')
+      if (confirmedFp && hostFp && confirmedFp !== hostFp) {
+        throw new Error('FINGERPRINT_MISMATCH')
+      }
+      const regRes = await callEngineRest('/api/managed/mobile/register', {
+        method: 'POST',
+        body: {
+          offer_id: offerId,
+          device_id: deviceId,
+          device_name: deviceName,
+          client_nonce: clientNonce
+        }
+      })
+      if (!regRes.ok) {
+        throw new Error(String(regRes.data?.detail || regRes.error || 'REGISTRATION_FAILED'))
+      }
+      const regDev = (regRes.data?.device as Record<string, unknown>) || {}
+      return {
+        ok: true,
+        credential: {
+          deviceId,
+          deviceName,
+          deviceToken: String(regDev.token || ''),
+          hostId: String(hostIdRes.data?.host_id || 'orca-host'),
+          issuedAt: Date.now(),
+          expiresAt:
+            typeof regDev.expires_at === 'number'
+              ? Math.floor(regDev.expires_at * 1000)
+              : Date.now() + 86400000,
+          role: 'MOBILE_READONLY',
+          revoked: false,
+          nonce: clientNonce,
+          status: String(regDev.status || 'PENDING_APPROVAL')
+        }
+      }
+    }
+  }),
+  defineMethod({
+    name: 'managed.checkDeviceStatus',
+    permission: 'workspace',
+    params: ManagedEmptyParamsSchema,
+    handler: async (params, ctx) => {
+      try {
+        const auth = extractCallerAuth(params, ctx)
+        const res = await callEngineRpc('managed.listProjects', {}, auth)
+        if (res.ok) {
+          return { ok: true, status: 'AUTHORIZED' }
+        }
+        const errMsg = String(res.error_message || res.error_code || '')
+        if (errMsg.includes('PENDING')) {
+          return { ok: true, status: 'PENDING_APPROVAL' }
+        }
+        if (errMsg.includes('REVOKED')) {
+          return { ok: true, status: 'REVOKED' }
+        }
+        return { ok: false, status: 'AUTH_REQUIRED', error: errMsg }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes('PENDING')) {
+          return { ok: true, status: 'PENDING_APPROVAL' }
+        }
+        if (msg.includes('REVOKED')) {
+          return { ok: true, status: 'REVOKED' }
+        }
+        return { ok: false, status: 'AUTH_REQUIRED', error: msg }
+      }
+    }
+  }),
   defineMethod({
     name: 'managed.listProjects',
     permission: 'workspace',
     params: ManagedEmptyParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const res = await callEngineRpc('managed.listProjects', {}, auth)
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
+    handler: (p, ctx) => forwardRpc('managed.listProjects', {}, p, ctx)
   }),
   defineMethod({
     name: 'managed.listTasks',
     permission: 'workspace',
     params: ManagedProjectScopedParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const pId = params?.project_id || params?.projectId || ''
-      const res = await callEngineRpc('managed.listTasks', { project_id: pId }, auth)
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
+    handler: (p, ctx) =>
+      forwardRpc('managed.listTasks', { project_id: p?.project_id || p?.projectId || '' }, p, ctx)
   }),
   defineMethod({
     name: 'managed.getExecution',
     permission: 'workspace',
     params: ManagedTaskScopedParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const pId = params?.project_id || params?.projectId || ''
-      const tId = params?.task_id || params?.taskId || ''
-      const res = await callEngineRpc(
+    handler: (p, ctx) =>
+      forwardRpc(
         'managed.getExecution',
-        { project_id: pId, task_id: tId },
-        auth
+        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
+        p,
+        ctx
       )
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
   }),
   defineMethod({
     name: 'managed.getEvidence',
     permission: 'workspace',
     params: ManagedTaskScopedParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const pId = params?.project_id || params?.projectId || ''
-      const tId = params?.task_id || params?.taskId || ''
-      const res = await callEngineRpc(
+    handler: (p, ctx) =>
+      forwardRpc(
         'managed.getEvidence',
-        { project_id: pId, task_id: tId },
-        auth
+        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
+        p,
+        ctx
       )
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
   }),
   defineMethod({
     name: 'managed.presentReviewPacket',
     permission: 'workspace',
     params: ManagedTaskScopedParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const pId = params?.project_id || params?.projectId || ''
-      const tId = params?.task_id || params?.taskId || ''
-      const res = await callEngineRpc(
+    handler: (p, ctx) =>
+      forwardRpc(
         'managed.presentReviewPacket',
-        { project_id: pId, task_id: tId },
-        auth
+        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
+        p,
+        ctx
       )
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
   }),
   defineMethod({
     name: 'managed.listActivity',
     permission: 'workspace',
     params: ManagedActivityParamsSchema,
-    handler: async (params, ctx) => {
-      const auth = extractCallerAuth(params, ctx)
-      const pId = params?.project_id || params?.projectId || ''
-      const tId = params?.task_id || params?.taskId || ''
-      const res = await callEngineRpc(
+    handler: (p, ctx) =>
+      forwardRpc(
         'managed.listActivity',
         {
-          project_id: pId,
-          task_id: tId,
-          limit: params?.limit,
-          before_id: params?.before_id
+          project_id: p?.project_id || p?.projectId || '',
+          task_id: p?.task_id || p?.taskId || '',
+          limit: p?.limit,
+          before_id: p?.before_id
         },
-        auth
+        p,
+        ctx
       )
-      if (!res.ok) {
-        throw new Error(String(res.error_code || res.error_message || 'RPC_FAILED'))
-      }
-      return res.data ?? {}
-    }
   })
 ]

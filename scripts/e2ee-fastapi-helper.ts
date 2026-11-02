@@ -44,30 +44,11 @@ export function checkLoopbackOnly(port: number): { isLoopbackOnly: boolean; deta
   }
 }
 
-export async function performFastApiPairing(
+export async function approveDeviceAsOperator(
   port: number,
-  offerId: string,
   deviceId: string,
   opToken: string
-): Promise<FastApiPairingResult> {
-  const regResp = await fetch(`http://127.0.0.1:${port}/api/managed/mobile/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      offer_id: offerId,
-      device_id: deviceId,
-      device_name: 'Pixel 8 E2E Pro',
-      client_nonce: `cnonce-${Date.now()}`
-    })
-  })
-  const regData = (await regResp.json()) as {
-    ok: boolean
-    device: { status: string; token: string }
-  }
-  if (!regData.ok || regData.device.status !== 'PENDING_APPROVAL') {
-    throw new Error(`Device registration unexpected: ${JSON.stringify(regData)}`)
-  }
-
+): Promise<{ csrfToken: string; sessionCookie: string }> {
   const unlockResp = await fetch(`http://127.0.0.1:${port}/api/auth/unlock`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -92,7 +73,34 @@ export async function performFastApiPairing(
   if (!appData.ok || appData.status !== 'AUTHORIZED') {
     throw new Error(`Failed to approve device: ${JSON.stringify(appData)}`)
   }
+  return { csrfToken, sessionCookie }
+}
 
+export async function performFastApiPairing(
+  port: number,
+  offerId: string,
+  deviceId: string,
+  opToken: string
+): Promise<FastApiPairingResult> {
+  const regResp = await fetch(`http://127.0.0.1:${port}/api/managed/mobile/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      offer_id: offerId,
+      device_id: deviceId,
+      device_name: 'Pixel 8 E2E Pro',
+      client_nonce: `cnonce-${Date.now()}`
+    })
+  })
+  const regData = (await regResp.json()) as {
+    ok: boolean
+    device: { status: string; token: string }
+  }
+  if (!regData.ok || regData.device.status !== 'PENDING_APPROVAL') {
+    throw new Error(`Device registration unexpected: ${JSON.stringify(regData)}`)
+  }
+
+  const { csrfToken, sessionCookie } = await approveDeviceAsOperator(port, deviceId, opToken)
   return { deviceToken: regData.device.token, csrfToken, sessionCookie }
 }
 

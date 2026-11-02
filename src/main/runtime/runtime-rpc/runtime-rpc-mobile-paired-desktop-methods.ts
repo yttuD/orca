@@ -109,6 +109,9 @@ export const PAIRED_DESKTOP_METHODS = [
   'terminal.getAutoRestoreFit',
   'terminal.setAutoRestoreFit',
   // Managed Center: Read-only access to projects, tasks, execution, evidence and activity from Python FastAPI
+  'managed.getHostIdentity',
+  'managed.registerDevice',
+  'managed.checkDeviceStatus',
   'managed.listProjects',
   'managed.listTasks',
   'managed.getExecution',

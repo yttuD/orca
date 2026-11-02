@@ -257,43 +257,24 @@ export function registerManagedHandlers(): () => void {
     ipcMain.removeHandler(h)
   }
 
-  ipcMain.handle('managed:listProjects', async () => {
-    return await fetchManagedProjectsFromEngine()
-  })
-
+  ipcMain.handle('managed:listProjects', () => fetchManagedProjectsFromEngine())
   ipcMain.handle('managed:status', async () => {
     const res = await fetchManagedProjectsFromEngine()
     const cfg = resolveProfileAndToken()
     return { status: res.status, ok: res.ok, profile: cfg.profile }
   })
-
-  ipcMain.handle('managed:listTasks', async (_event, projectId?: string) => {
-    return await fetchManagedTasksFromEngine(projectId)
-  })
-
-  ipcMain.handle('managed:getExecution', async (_event, projectId: string, taskId: string) => {
-    return await fetchManagedExecutionFromEngine(projectId, taskId)
-  })
-
-  ipcMain.handle(
-    'managed:getEvidence',
-    async (_event, projectId: string, taskId: string, attemptId?: string, evidenceKey?: string) => {
-      return await fetchManagedEvidenceFromEngine(projectId, taskId, attemptId, evidenceKey)
-    }
+  ipcMain.handle('managed:listTasks', (_e, p?: string) => fetchManagedTasksFromEngine(p))
+  ipcMain.handle('managed:getExecution', (_e, p: string, t: string) =>
+    fetchManagedExecutionFromEngine(p, t)
   )
-
-  ipcMain.handle(
-    'managed:presentReviewPacket',
-    async (_event, projectId: string, taskId: string, attemptId?: string) => {
-      return await fetchManagedReviewPacketFromEngine(projectId, taskId, attemptId)
-    }
+  ipcMain.handle('managed:getEvidence', (_e, p: string, t: string, a?: string, k?: string) =>
+    fetchManagedEvidenceFromEngine(p, t, a, k)
   )
-
-  ipcMain.handle(
-    'managed:listActivity',
-    async (_event, projectId: string, taskId?: string, limit?: number, beforeId?: number) => {
-      return await fetchManagedActivityFromEngine(projectId, taskId, limit, beforeId)
-    }
+  ipcMain.handle('managed:presentReviewPacket', (_e, p: string, t: string, a?: string) =>
+    fetchManagedReviewPacketFromEngine(p, t, a)
+  )
+  ipcMain.handle('managed:listActivity', (_e, p: string, t?: string, l?: number, b?: number) =>
+    fetchManagedActivityFromEngine(p, t, l, b)
   )
 
   return () => {

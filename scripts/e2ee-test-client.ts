@@ -134,6 +134,15 @@ export class AuthenticE2eeMobileRpcClient {
     })
   }
 
+  async request(method: string, params?: unknown): Promise<unknown> {
+    const res = await this.sendRequest(method, params)
+    if (!res.ok) {
+      const err = res.error ?? {}
+      throw new Error(String(err.message || err.code || 'RPC_FAILED'))
+    }
+    return res.result
+  }
+
   getState(): { kind: 'connected' | 'connecting' | 'disconnected' } {
     return { kind: this.state }
   }

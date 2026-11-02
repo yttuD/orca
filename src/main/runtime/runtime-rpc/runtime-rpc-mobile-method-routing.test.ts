@@ -27,6 +27,9 @@ describe('mobile RPC method routing census', () => {
 
   it('routes allowed managed methods to paired desktop and rejects forbidden mutations', () => {
     const allowed = [
+      'managed.getHostIdentity',
+      'managed.registerDevice',
+      'managed.checkDeviceStatus',
       'managed.listProjects',
       'managed.listTasks',
       'managed.getExecution',

@@ -272,4 +272,27 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     const afterDelete = await loadStoredCredential('host-gamma')
     expect(afterDelete).toBeNull()
   })
+
+  it('11. does not cache host on storage failure and enforces independent reference', async () => {
+    const { setTestSecureStorageDriver } = await import('./trusted-host-store')
+    setTestSecureStorageDriver({
+      getItem: async () => null,
+      setItem: async () => {
+        throw new Error('disk full')
+      },
+      deleteItem: async () => {}
+    })
+    const store = new SecureTrustedHostStore()
+    const validPubB64 = 'KMsCWIv+fW3YU4ywFIr+r66+dczkegsvhEA2OKbvJnk='
+    const expectedFp = computeFingerprintFromPublicKey(validPubB64)
+
+    const res1 = await store.verifyAndPinHost('host-fail', validPubB64, expectedFp)
+    expect(res1.ok).toBe(false)
+    expect(res1.error).toBe('STORAGE_PERSISTENCE_FAILED')
+    expect(store.getTrustedHostKey('host-fail')).toBeNull()
+
+    const res2 = await store.verifyAndPinHost('host-fail', validPubB64)
+    expect(res2.ok).toBe(false)
+    expect(res2.error).toBe('INDEPENDENT_REFERENCE_REQUIRED')
+  })
 })

@@ -225,3 +225,31 @@ export async function callEngineRpc(
     }
   }
 }
+
+export async function callEngineRest(
+  path: string,
+  options: { method?: string; headers?: Record<string, string>; body?: unknown } = {}
+): Promise<{ ok: boolean; status: number; data?: Record<string, unknown>; error?: string }> {
+  const config = resolveProfileAndToken()
+  const url = `http://127.0.0.1:${config.port}${path}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3000)
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Managed-Profile': config.profile,
+      ...options.headers
+    }
+    const resp = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeout))
+    const json = (await resp.json().catch(() => ({}))) as Record<string, unknown>
+    return { ok: resp.ok, status: resp.status, data: json }
+  } catch (err: unknown) {
+    clearTimeout(timeout)
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) }
+  }
+}
