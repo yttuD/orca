@@ -9,6 +9,7 @@ import {
   loadStoredCredential,
   saveStoredCredential,
   verifyHostFingerprint,
+  verifyIndependentFingerprint,
   normalizeHostPublicKey,
   computeFingerprintFromPublicKey,
   SecureTrustedHostStore
