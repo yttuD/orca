@@ -194,6 +194,9 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
   })
 
   it('8. SecureTrustedHostStore validates independent fingerprint and rejects key substitution', async () => {
+    const { setTestSecureStorageDriver, createMemoryStorageDriver } =
+      await import('./trusted-host-store')
+    setTestSecureStorageDriver(createMemoryStorageDriver())
     const store = new SecureTrustedHostStore()
     const validPubB64 = 'KMsCWIv+fW3YU4ywFIr+r66+dczkegsvhEA2OKbvJnk='
     const expectedFp = computeFingerprintFromPublicKey(validPubB64)
@@ -230,9 +233,14 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     expect(tasks.length).toBeGreaterThan(0)
   })
 
-  it('10. persists and retrieves MobileDeviceCredential via SecureStore/AsyncStorage', async () => {
-    const { loadStoredCredential, saveStoredCredential, removeStoredCredential } =
-      await import('./trusted-host-store')
+  it('10. fails closed without driver, and persists via injected SecureStorageDriver', async () => {
+    const {
+      loadStoredCredential,
+      saveStoredCredential,
+      removeStoredCredential,
+      setTestSecureStorageDriver,
+      createMemoryStorageDriver
+    } = await import('./trusted-host-store')
     const cred: MobileDeviceCredential = {
       deviceId: 'phone-test-1',
       deviceName: 'Pixel Test',
@@ -245,6 +253,15 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
       nonce: 'nonce-init-1'
     }
 
+    // 1. Without injected driver on unsupported/mockless runtime: fails closed
+    setTestSecureStorageDriver(null)
+    const failClosedSave = await saveStoredCredential(cred)
+    expect(failClosedSave).toBe(false)
+    const failClosedLoad = await loadStoredCredential('host-gamma')
+    expect(failClosedLoad).toBeNull()
+
+    // 2. With explicitly injected test driver: persistence succeeds
+    setTestSecureStorageDriver(createMemoryStorageDriver())
     const saved = await saveStoredCredential(cred)
     expect(saved).toBe(true)
 

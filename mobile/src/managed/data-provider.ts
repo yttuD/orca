@@ -13,6 +13,15 @@ import {
 } from './fixtures'
 import type { RpcClient } from '../transport/rpc-client'
 
+function generateCsprngHex(byteLength = 16): string {
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(byteLength)
+    globalThis.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  throw new Error('CSPRNG_UNAVAILABLE')
+}
+
 export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
   private authenticated = false
   private authError: string | null = null
@@ -67,7 +76,7 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     return {
       deviceId: this.credential.deviceId,
       deviceToken: this.credential.deviceToken,
-      nonce: `req-nonce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      nonce: `req-nonce-${Date.now()}-${generateCsprngHex(16)}`,
       timestamp: Math.floor(Date.now() / 1000)
     }
   }

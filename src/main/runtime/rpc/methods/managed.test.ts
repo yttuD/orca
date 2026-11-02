@@ -171,7 +171,13 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     })
     const res = await dispatchManaged(
       'managed.listProjects',
-      { _auth: { deviceToken: 'tok-123' } },
+      {
+        _auth: {
+          deviceToken: 'tok-123',
+          nonce: 'nonce-req-002',
+          timestamp: 1700000000
+        }
+      },
       { clientKind: 'mobile', pairedDeviceId: 'authenticated-id' }
     )
     expect(res.ok).toBe(true)
@@ -180,5 +186,15 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
       {},
       expect.objectContaining({ deviceId: 'authenticated-id', deviceToken: 'tok-123' })
     )
+  })
+
+  it('9. rejects mobile request with INCOMPLETE_AUTHENTICATION_METADATA when fields are missing', async () => {
+    const res = await dispatchManaged(
+      'managed.listProjects',
+      { _auth: { deviceToken: 'tok-123' } },
+      { clientKind: 'mobile', pairedDeviceId: 'authenticated-id' }
+    )
+    expect(res.ok).toBe(false)
+    expect(JSON.stringify(res.error)).toContain('INCOMPLETE_AUTHENTICATION_METADATA')
   })
 })

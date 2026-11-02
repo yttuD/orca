@@ -1,8 +1,8 @@
 #!/usr/bin/env npx tsx
 /**
- * Authentic ORCA-04D-R2 E2E Integration Pipeline Test:
+ * Authentic ORCA-04E E2E Runtime Integration Pipeline Test:
  * Mobile Client -> Encrypted Tunnel -> Orca Desktop RPC Runtime -> callEngineRpc -> Python FastAPI -> SQLite Stores.
- * Zero mocks on callEngineRpc, zero mocks on Desktop runtime, zero mocks on FastAPI.
+ * Negative tests (replay, cross-profile, spoofing, revocation) traverse the REAL path.
  */
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
@@ -11,7 +11,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { EncryptedRpcManagedDataProvider } from '../mobile/src/managed/data-provider'
 import type { MobileDeviceCredential } from '../mobile/src/managed/types'
-import { saveStoredCredential } from '../mobile/src/managed/trusted-host-store'
+import {
+  saveStoredCredential,
+  computeFingerprintFromPublicKey
+} from '../mobile/src/managed/trusted-host-store'
 import { OrcaRuntimeService } from '../src/main/runtime/orca-runtime'
 import { OrcaRuntimeRpcServer } from '../src/main/runtime/runtime-rpc'
 import { makeStore } from '../src/main/runtime/runtime-rpc-worktree-store-fixtures'
@@ -21,9 +24,9 @@ import { AuthenticE2eeMobileRpcClient } from './e2ee-test-client'
 import {
   checkLoopbackOnly,
   performFastApiPairing,
-  testReplayRejection,
-  testCrossProfileRejection,
-  verifyHostTrustPinning
+  verifyRealHostTrustPinning,
+  verifyRealQueries,
+  verifyRealSecurityBoundaries
 } from './e2ee-fastapi-helper'
 import type { RpcClient } from '../mobile/src/transport/rpc-client'
 
@@ -36,7 +39,7 @@ async function wait(ms: number): Promise<void> {
 }
 
 async function runAuthenticE2eTest(): Promise<void> {
-  console.log('=== [ORCA-04D-R2] Starting Authentic E2E Runtime Integration Pipeline ===')
+  console.log('=== [ORCA-04E] Starting Authentic E2E Runtime Integration Pipeline ===')
   const tempDirs: string[] = []
   let pyProcess: ChildProcess | null = null
   let server: OrcaRuntimeRpcServer | null = null
@@ -58,8 +61,7 @@ async function runAuthenticE2eTest(): Promise<void> {
 
     await new Promise<void>((res, rej) => {
       pyProcess?.stdout?.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
-        for (const line of text.split('\n')) {
+        for (const line of chunk.toString().split('\n')) {
           if (line.startsWith('ENGINE_READY:')) {
             const parts = line.trim().split(':')
             offerId = parts[2]
@@ -74,7 +76,7 @@ async function runAuthenticE2eTest(): Promise<void> {
       pyProcess?.on('error', rej)
       pyProcess?.on('exit', (code) => {
         if (code !== 0) {
-          rej(new Error(`Python process exited prematurely with code ${code}`))
+          rej(new Error(`Python process exited prematurely: ${code}`))
         }
       })
     })
@@ -101,25 +103,25 @@ async function runAuthenticE2eTest(): Promise<void> {
 
     const socketCheck = checkLoopbackOnly(ORCA_RPC_PORT)
     if (!socketCheck.isLoopbackOnly) {
-      throw new Error(`Socket not loopback only: ${socketCheck.details}`)
+      throw new Error(`Socket not loopback: ${socketCheck.details}`)
     }
-    console.log(
-      `  --> PASS [LOOPBACK_ONLY_PASS]: Strictly bound to 127.0.0.1 (${socketCheck.details})`
-    )
+    console.log(`  --> PASS [LOOPBACK_ONLY_PASS]: Strictly bound to 127.0.0.1`)
 
-    console.log('[3/7] Verifying Host Trust & Key Pinning (HOST_TRUST_PASS)...')
-    await verifyHostTrustPinning()
-    console.log(
-      '  --> PASS [HOST_TRUST_PASS]: Fingerprint reference, explicit acceptance, and substitution rejected'
-    )
-
-    console.log('[4/7] Generating pairing offer from Orca Desktop & registering on FastAPI...')
+    console.log('[3/7] Generating pairing offer & verifying independent host key pinning...')
     const desktopOffer = server.createPairingOffer({ address: '127.0.0.1', scope: 'mobile' })
     const parsedOffer = parsePairingCode(desktopOffer.pairingUrl)
     if (!parsedOffer) {
       throw new Error('Failed to parse Orca Desktop pairing code')
     }
 
+    const realHostPubKey = server.getE2EEPublicKey()!
+    const outOfBandFingerprint = computeFingerprintFromPublicKey(realHostPubKey)
+    await verifyRealHostTrustPinning('orca-desktop-main', realHostPubKey, outOfBandFingerprint)
+    console.log(
+      '  --> PASS [HOST_TRUST_PASS]: Fail-closed store & independent fingerprint pinning verified'
+    )
+
+    console.log('[4/7] Registering device with Python FastAPI engine and saving credential...')
     let httpReady = false
     for (let i = 0; i < 40; i++) {
       try {
@@ -157,7 +159,7 @@ async function runAuthenticE2eTest(): Promise<void> {
     }
     await saveStoredCredential(credential)
 
-    console.log('[5/7] Connecting mobile client to real Orca Desktop Runtime via E2EE...')
+    console.log('[5/7] Connecting mobile client to Orca Desktop Runtime via E2EE WebSocket...')
     client = new AuthenticE2eeMobileRpcClient(
       parsedOffer.endpoint,
       parsedOffer.deviceToken,
@@ -168,115 +170,52 @@ async function runAuthenticE2eTest(): Promise<void> {
     const provider = new EncryptedRpcManagedDataProvider(client as unknown as RpcClient, credential)
     const probeStatus = await provider.probeAuthentication()
     if (probeStatus !== 'ONLINE') {
-      throw new Error(`Expected ONLINE status, got: ${probeStatus}`)
+      throw new Error(`Expected ONLINE, got: ${probeStatus}`)
     }
 
-    console.log(
-      '[6/7] Querying real stores through Orca Desktop Runtime (DESKTOP_RUNTIME_E2E_PASS)...'
-    )
-    const projects = await provider.listProjects()
-    if (!projects || projects.length === 0 || !projects[0].name.includes('SEEDED_TEST_DATA')) {
-      throw new Error(`Project query invalid: ${JSON.stringify(projects)}`)
-    }
-    const realProjectId = projects[0].id
-
-    const tasks = await provider.listTasks(realProjectId)
-    if (!tasks || tasks.length === 0 || !tasks[0].id) {
-      throw new Error(`Tasks query invalid: ${JSON.stringify(tasks)}`)
-    }
-    const realTaskId = tasks[0].id
-
-    const evidence = await provider.getEvidence(realProjectId, realTaskId)
-    if (!evidence || !evidence.is_synthetic || evidence.certification_status !== 'UNCERTIFIED') {
-      throw new Error(
-        `Seeded test data must be uncertified and synthetic: ${JSON.stringify(evidence)}`
-      )
-    }
-    console.log(
-      '  --> PASS [SEEDED_TEST_DATA]: Explicitly marked as SEEDED_TEST_DATA and UNCERTIFIED'
-    )
-
+    console.log('[6/7] Querying real stores through Orca Desktop Runtime...')
     const authPayload = {
       deviceId: credential.deviceId,
       deviceToken: credential.deviceToken,
       nonce: `req-nonce-${Date.now()}-rev`,
       timestamp: Math.floor(Date.now() / 1000)
     }
-    const reviewRes = await client.sendRequest('managed.presentReviewPacket', {
-      projectId: realProjectId,
-      taskId: realTaskId,
-      _auth: authPayload
-    })
-    if (!reviewRes.ok) {
-      throw new Error(`Review packet failed: ${JSON.stringify(reviewRes)}`)
-    }
-
-    const activityRes = await client.sendRequest('managed.listActivity', {
-      projectId: realProjectId,
-      taskId: realTaskId,
-      _auth: { ...authPayload, nonce: `req-nonce-${Date.now()}-act` }
-    })
-    if (!activityRes.ok) {
-      throw new Error(`Activity query failed: ${JSON.stringify(activityRes)}`)
-    }
-
-    const execRes = await client.sendRequest('managed.getExecution', {
-      projectId: realProjectId,
-      taskId: realTaskId,
-      _auth: { ...authPayload, nonce: `req-nonce-${Date.now()}-exec` }
-    })
-    if (!execRes.ok) {
-      throw new Error(`Execution query failed: ${JSON.stringify(execRes)}`)
-    }
+    await verifyRealQueries(provider, client, authPayload)
     console.log(
-      '  --> PASS [DESKTOP_RUNTIME_E2E_PASS]: Real Desktop RPC -> callEngineRpc -> FastAPI -> SQLite'
+      '  --> PASS [SEEDED_TEST_DATA]: Explicitly marked as SEEDED_TEST_DATA and UNCERTIFIED'
     )
+    console.log('  --> PASS [DESKTOP_RUNTIME_E2E_PASS]: Real queries succeeded across pipeline')
 
-    console.log('[7/7] Verifying Security Boundaries (MOBILE_AUTHORIZATION_PASS)...')
-    const spoofRes = await client.sendRequest('managed.listProjects', {
-      _auth: { ...authPayload, deviceId: 'spoofed-attacker-device-id' }
+    console.log(
+      '[7/7] Verifying Security Boundaries via REAL Path (Mobile RPC -> Desktop -> FastAPI)...'
+    )
+    await verifyRealSecurityBoundaries({
+      client,
+      server,
+      credential,
+      authPayload,
+      pythonPort: PYTHON_PORT,
+      csrfToken: fastApiAuth.csrfToken,
+      sessionCookie: fastApiAuth.sessionCookie
     })
-    const spoofRejected =
-      !spoofRes.ok &&
-      (String(spoofRes.error?.message).includes('DEVICE_IDENTITY_SPOOF_REJECTED') ||
-        String(spoofRes.error?.code).includes('DEVICE_IDENTITY_SPOOF_REJECTED'))
-    if (!spoofRejected) {
-      throw new Error(`Expected spoofing attempt to be rejected, got: ${JSON.stringify(spoofRes)}`)
-    }
-
-    const replayRejected = await testReplayRejection(PYTHON_PORT, authPayload)
-    if (!replayRejected) {
-      throw new Error('Expected replay attack to be rejected')
-    }
-
-    const crossProfileRejected = await testCrossProfileRejection(
-      PYTHON_PORT,
-      fastApiAuth.deviceToken
-    )
-    if (!crossProfileRejected) {
-      throw new Error('Expected cross-profile access to be rejected')
-    }
 
     client.close()
-    const clientReconnect = new AuthenticE2eeMobileRpcClient(
+    const reconnectClient = new AuthenticE2eeMobileRpcClient(
       parsedOffer.endpoint,
       parsedOffer.deviceToken,
       parsedOffer.publicKeyB64
     )
-    await clientReconnect.connect()
-
-    if (parsedOffer.pairedDeviceId) {
-      server.revokeRuntimeAccess(parsedOffer.pairedDeviceId)
-      const revRes = await clientReconnect.sendRequest('managed.listProjects', {})
-      if (revRes.ok) {
-        throw new Error('Expected RPC to fail after runtime revocation')
-      }
+    await reconnectClient.connect()
+    const postRuntimeRevokeRes = await reconnectClient.sendRequest('managed.listProjects', {})
+    if (postRuntimeRevokeRes.ok) {
+      throw new Error('Expected request to fail after Orca runtime revocation')
     }
-    clientReconnect.close()
+    reconnectClient.close()
+
     console.log(
-      '  --> PASS [MOBILE_AUTHORIZATION_PASS]: Identity, replay, cross-profile, reconnect & revocation verified'
+      '  --> PASS [MOBILE_AUTHORIZATION_PASS]: Replay, spoofing, cross-profile & dual revocation verified'
     )
-    console.log('\n=== ORCA-04D-R2 SUCCESS: Real Orca Desktop Runtime E2E Verified ===\n')
+    console.log('\n=== ORCA-04E SUCCESS: Real Orca Desktop Runtime E2E Pipeline Verified ===\n')
   } finally {
     client?.close()
     if (server) {

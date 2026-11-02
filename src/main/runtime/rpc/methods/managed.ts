@@ -9,12 +9,14 @@ const ManagedAuthFields = {
   device_token: z.string().optional(),
   nonce: z.string().optional(),
   timestamp: z.number().optional(),
+  profile: z.string().optional(),
   _auth: z
     .object({
       deviceId: z.string().optional(),
       deviceToken: z.string().optional(),
       nonce: z.string().optional(),
-      timestamp: z.number().optional()
+      timestamp: z.number().optional(),
+      profile: z.string().optional()
     })
     .optional()
 }
@@ -76,30 +78,34 @@ function extractCallerAuth(
     )
   }
 
-  const deviceId = String(ctx?.pairedDeviceId || untrustedDeviceId || 'unknown-mobile')
+  const deviceId = ctx?.pairedDeviceId || untrustedDeviceId
   const deviceToken = authObj?.deviceToken
     ? String(authObj.deviceToken)
     : params?.deviceToken
       ? String(params.deviceToken)
       : params?.device_token
         ? String(params.device_token)
-        : ctx?.clientId
+        : null
 
-  const nonce = authObj?.nonce
-    ? String(authObj.nonce)
-    : params?.nonce
-      ? String(params.nonce)
-      : `nonce-req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  const nonce = authObj?.nonce ? String(authObj.nonce) : params?.nonce ? String(params.nonce) : null
 
   const rawTs = authObj?.timestamp ?? params?.timestamp
-  const timestamp = typeof rawTs === 'number' ? rawTs : Math.floor(Date.now() / 1000)
+  const timestamp = typeof rawTs === 'number' ? rawTs : null
+
+  if (!deviceId || !deviceToken || !nonce || timestamp === null) {
+    throw new Error('INCOMPLETE_AUTHENTICATION_METADATA')
+  }
+
+  const profile =
+    (authObj?.profile as string | undefined) ?? (params?.profile as string | undefined)
 
   return {
     surface: 'mobile',
     deviceId,
     deviceToken,
     nonce,
-    timestamp
+    timestamp,
+    ...(profile ? { profile } : {})
   }
 }
 

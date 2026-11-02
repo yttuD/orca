@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ManagedProfileConfig } from './managed-types'
@@ -150,6 +151,7 @@ export type ManagedCallerAuth = {
   deviceToken?: string
   nonce?: string
   timestamp?: number
+  profile?: string
 }
 
 export async function callEngineRpc(
@@ -160,7 +162,7 @@ export async function callEngineRpc(
   const config = resolveProfileAndToken()
   const isMobile = callerAuth?.surface === 'mobile' || Boolean(callerAuth?.deviceId)
   const payload = {
-    request_id: `req-orca-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    request_id: `req-orca-${Date.now()}-${randomBytes(4).toString('hex')}`,
     method,
     protocol: { name: 'managed', major: 1, minor: 0 },
     caller: {
@@ -172,9 +174,10 @@ export async function callEngineRpc(
     params
   }
 
+  const profileHeader = callerAuth?.profile || config.profile
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Managed-Profile': config.profile
+    'X-Managed-Profile': profileHeader
   }
 
   if (isMobile) {

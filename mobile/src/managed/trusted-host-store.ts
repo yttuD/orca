@@ -5,9 +5,38 @@ import type { MobileDeviceCredential } from './types'
 
 const STORAGE_PREFIX = 'orca.managed.trusted_host.'
 const CREDENTIAL_STORAGE_PREFIX = 'orca.managed.credential.'
-const fallbackStorage = new Map<string, string>()
+
+export interface SecureStorageDriver {
+  getItem: (key: string) => Promise<string | null>
+  setItem: (key: string, value: string) => Promise<void>
+  deleteItem: (key: string) => Promise<void>
+}
+
+let testStorageDriver: SecureStorageDriver | null = null
+
+export function setTestSecureStorageDriver(driver: SecureStorageDriver | null): void {
+  testStorageDriver = driver
+}
+
+export function createMemoryStorageDriver(): SecureStorageDriver {
+  const store = new Map<string, string>()
+  return {
+    async getItem(key: string) {
+      return store.get(key) ?? null
+    },
+    async setItem(key: string, value: string) {
+      store.set(key, value)
+    },
+    async deleteItem(key: string) {
+      store.delete(key)
+    }
+  }
+}
 
 async function safeGetItem(key: string): Promise<string | null> {
+  if (testStorageDriver) {
+    return testStorageDriver.getItem(key)
+  }
   try {
     // oxlint-disable-next-line typescript/no-require-imports
     const { Platform } = require('react-native') as { Platform?: { OS: string } }
@@ -22,15 +51,22 @@ async function safeGetItem(key: string): Promise<string | null> {
     }
     // oxlint-disable-next-line typescript/no-require-imports
     const SecureStore = require('expo-secure-store') as {
-      getItemAsync: (k: string) => Promise<string | null>
+      getItemAsync?: (k: string) => Promise<string | null>
     }
-    return (await SecureStore?.getItemAsync(key)) ?? null
+    if (!SecureStore?.getItemAsync) {
+      return null
+    }
+    return (await SecureStore.getItemAsync(key)) ?? null
   } catch {
-    return fallbackStorage.get(key) ?? null
+    return null
   }
 }
 
 async function safeSetItem(key: string, value: string): Promise<boolean> {
+  if (testStorageDriver) {
+    await testStorageDriver.setItem(key, value)
+    return true
+  }
   try {
     // oxlint-disable-next-line typescript/no-require-imports
     const { Platform } = require('react-native') as { Platform?: { OS: string } }
@@ -41,22 +77,31 @@ async function safeSetItem(key: string, value: string): Promise<boolean> {
           default?: { setItem: (k: string, v: string) => Promise<void> }
         }
       ).default
-      await AsyncStorage?.setItem(key, value)
+      if (!AsyncStorage?.setItem) {
+        return false
+      }
+      await AsyncStorage.setItem(key, value)
       return true
     }
     // oxlint-disable-next-line typescript/no-require-imports
     const SecureStore = require('expo-secure-store') as {
-      setItemAsync: (k: string, v: string) => Promise<void>
+      setItemAsync?: (k: string, v: string) => Promise<void>
     }
-    await SecureStore?.setItemAsync(key, value)
+    if (!SecureStore?.setItemAsync) {
+      return false
+    }
+    await SecureStore.setItemAsync(key, value)
     return true
   } catch {
-    fallbackStorage.set(key, value)
-    return true
+    return false
   }
 }
 
 async function safeDeleteItem(key: string): Promise<void> {
+  if (testStorageDriver) {
+    await testStorageDriver.deleteItem(key)
+    return
+  }
   try {
     // oxlint-disable-next-line typescript/no-require-imports
     const { Platform } = require('react-native') as { Platform?: { OS: string } }
@@ -72,11 +117,11 @@ async function safeDeleteItem(key: string): Promise<void> {
     }
     // oxlint-disable-next-line typescript/no-require-imports
     const SecureStore = require('expo-secure-store') as {
-      deleteItemAsync: (k: string) => Promise<void>
+      deleteItemAsync?: (k: string) => Promise<void>
     }
-    await SecureStore?.deleteItemAsync(key)
+    await SecureStore?.deleteItemAsync?.(key)
   } catch {
-    fallbackStorage.delete(key)
+    // Ignore deletion errors on fail-closed cleanup
   }
 }
 
