@@ -60,12 +60,9 @@ async function runPhysicalValidation(): Promise<void> {
 
   try {
     // 0. Set up ADB reverse port forwarding
-    console.log('[1/9] Setting up ADB reverse tunnel for port 6789...')
     adbExec('reverse tcp:6789 tcp:6789')
-    console.log('  --> ADB reverse: host-20 tcp:6789 tcp:6789 ACTIVE')
 
     // 1. Spawn authentic Python FastAPI engine
-    console.log('[2/9] Spawning authentic Python FastAPI engine on 127.0.0.1:8765...')
     pyProcess = spawn('python', ['scripts/start_e2e_engine.py', '--port', String(PYTHON_PORT)], {
       cwd: REPO_ENGINE,
       stdio: ['pipe', 'pipe', 'inherit'],
@@ -101,10 +98,12 @@ async function runPhysicalValidation(): Promise<void> {
     })
 
     tempDirs.push(dataDir)
-    process.env.MANAGED_PORT = String(PYTHON_PORT)
-    process.env.MANAGED_ACTIVE_PROFILE_PATH = activeProfFile
-    process.env.MANAGED_BRIDGE_TOKEN_PATH = brTokenFile
-    process.env.MANAGED_PROFILE = 'NORMAL'
+    Object.assign(process.env, {
+      MANAGED_PORT: String(PYTHON_PORT),
+      MANAGED_ACTIVE_PROFILE_PATH: activeProfFile,
+      MANAGED_BRIDGE_TOKEN_PATH: brTokenFile,
+      MANAGED_PROFILE: 'NORMAL'
+    })
 
     let httpReady = false
     for (let i = 0; i < 40; i++) {
@@ -158,18 +157,15 @@ async function runPhysicalValidation(): Promise<void> {
     captureScreenshot('moto-g20-01-pair-confirm.png')
 
     // Tap "Emparejar" button on pair-confirm screen (center width 360, y 889)
-    console.log('  --> Tapping "Emparejar" button on Moto G20 (360, 889)...')
     adbExec('shell input tap 360 889')
     await waitForScreenText('Usar interfaz de chat', 30000)
     await wait(1000)
     captureScreenshot('moto-g20-02-paired.png')
 
     // Complete Onboarding: Step 1 tap "Usar interfaz de chat" (360, 1343), Step 2 tap "Ahora no" (360, 1434)
-    console.log('  --> Completing onboarding step 1: "Usar interfaz de chat" (360, 1343)...')
     adbExec('shell input tap 360 1343')
     await waitForScreenText('Ahora no', 20000)
     await wait(1000)
-    console.log('  --> Completing onboarding step 2: "Ahora no" (360, 1434)...')
     adbExec('shell input tap 360 1434')
     await wait(2500)
 
@@ -179,12 +175,10 @@ async function runPhysicalValidation(): Promise<void> {
       'shell am start -a android.intent.action.VIEW -d "orca://managed" com.stably.orca.mobile'
     )
     await waitForScreenText('Emparejar Centro Managed', 25000)
-    console.log('  --> Waiting 8s for WebSocket client to reach connected state...')
     await wait(8000)
     captureScreenshot('moto-g20-03-managed-unpaired.png')
 
     // Tap "Emparejar Centro Managed" button (x 200, y 497)
-    console.log('  --> Tapping "Emparejar Centro Managed" button on Moto G20 (200, 497)...')
     adbExec('shell input tap 200 497')
     await wait(4000)
     captureScreenshot('moto-g20-04-pending-approval.png')
@@ -196,11 +190,9 @@ async function runPhysicalValidation(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: opToken })
     })
-    const cookieHeader = unlockResp.headers.get('set-cookie') ?? ''
-    const sessionMatch = /orchestrator_session=([^;]+)/.exec(cookieHeader)
-    const sessionCookie = sessionMatch ? `orchestrator_session=${sessionMatch[1]}` : ''
-    const unlockData = (await unlockResp.json()) as { csrf_token: string }
-    const csrfToken = unlockData.csrf_token
+    const sessionCookie =
+      /orchestrator_session=([^;]+)/.exec(unlockResp.headers.get('set-cookie') ?? '')?.[0] ?? ''
+    const csrfToken = ((await unlockResp.json()) as { csrf_token: string }).csrf_token
 
     let pendingDevId: string | null = null
     for (let i = 0; i < 30; i++) {

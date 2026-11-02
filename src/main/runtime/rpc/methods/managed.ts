@@ -6,62 +6,7 @@ import {
   type ManagedCallerAuth
 } from '../../../ipc/managed-resolver'
 
-const sOpt = z.string().optional()
-const nOpt = z.number().optional()
-const ManagedAuthFields = {
-  deviceId: sOpt,
-  device_id: sOpt,
-  deviceToken: sOpt,
-  device_token: sOpt,
-  nonce: sOpt,
-  timestamp: nOpt,
-  profile: sOpt,
-  _auth: z
-    .object({ deviceId: sOpt, deviceToken: sOpt, nonce: sOpt, timestamp: nOpt, profile: sOpt })
-    .optional()
-}
-
-const ManagedEmptyParamsSchema = z.object({ ...ManagedAuthFields }).optional()
-const ManagedRegisterParamsSchema = z
-  .object({
-    offerId: sOpt,
-    offer_id: sOpt,
-    deviceId: sOpt,
-    device_id: sOpt,
-    deviceName: sOpt,
-    device_name: sOpt,
-    clientNonce: sOpt,
-    client_nonce: sOpt,
-    confirmedFingerprint: sOpt,
-    confirmed_fingerprint: sOpt,
-    ...ManagedAuthFields
-  })
-  .optional()
-
-const ManagedProjectScopedParamsSchema = z
-  .object({ projectId: sOpt, project_id: sOpt, ...ManagedAuthFields })
-  .optional()
-  .optional()
-
-const ManagedTaskScopedParamsSchema = z.object({
-  projectId: z.string().optional(),
-  project_id: z.string().optional(),
-  taskId: z.string().optional(),
-  task_id: z.string().optional(),
-  ...ManagedAuthFields
-})
-
-const ManagedActivityParamsSchema = z
-  .object({
-    projectId: z.string().optional(),
-    project_id: z.string().optional(),
-    taskId: z.string().optional(),
-    task_id: z.string().optional(),
-    limit: z.number().optional(),
-    before_id: z.number().optional(),
-    ...ManagedAuthFields
-  })
-  .optional()
+const AnyParamsSchema = z.record(z.unknown()).optional()
 
 function extractCallerAuth(
   params: Record<string, unknown> | undefined,
@@ -149,7 +94,7 @@ const defTask = (name: string) =>
   defineMethod({
     name,
     permission: 'workspace',
-    params: ManagedTaskScopedParamsSchema,
+    params: AnyParamsSchema,
     handler: (p, ctx) =>
       forwardRpc(
         name,
@@ -163,7 +108,7 @@ export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.getHostIdentity',
     permission: 'workspace',
-    params: ManagedEmptyParamsSchema,
+    params: AnyParamsSchema,
     handler: async (_p, ctx) => {
       const res = await callEngineRest('/api/managed/mobile/host-identity')
       if (!res.ok) {
@@ -178,7 +123,7 @@ export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.registerDevice',
     permission: 'workspace',
-    params: ManagedRegisterParamsSchema,
+    params: AnyParamsSchema,
     handler: async (params, ctx) => {
       const offerId = params?.offerId || params?.offer_id,
         deviceId = params?.deviceId || params?.device_id
@@ -217,6 +162,10 @@ export const MANAGED_RPC_METHODS = [
       const pythonHostId = String(hostIdRes.data?.host_id || 'orca-host')
       const nativeDesktopHostId =
         (ctx?.runtime as unknown as { hostId?: string })?.hostId || 'local'
+      const expAt =
+        typeof regDev.expires_at === 'number'
+          ? Math.floor(regDev.expires_at * 1000)
+          : Date.now() + 86400000
       return {
         ok: true,
         credential: {
@@ -227,10 +176,7 @@ export const MANAGED_RPC_METHODS = [
           nativeHostId: nativeDesktopHostId,
           hostFingerprint: hostFp,
           issuedAt: Date.now(),
-          expiresAt:
-            typeof regDev.expires_at === 'number'
-              ? Math.floor(regDev.expires_at * 1000)
-              : Date.now() + 86400000,
+          expiresAt: expAt,
           role: 'MOBILE_READONLY',
           revoked: false,
           nonce: clientNonce,
@@ -242,7 +188,7 @@ export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.checkDeviceStatus',
     permission: 'workspace',
-    params: ManagedEmptyParamsSchema,
+    params: AnyParamsSchema,
     handler: async (params, ctx) => {
       try {
         const auth = extractCallerAuth(params, ctx)
@@ -273,13 +219,13 @@ export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.listProjects',
     permission: 'workspace',
-    params: ManagedEmptyParamsSchema,
+    params: AnyParamsSchema,
     handler: (p, ctx) => forwardRpc('managed.listProjects', {}, p, ctx)
   }),
   defineMethod({
     name: 'managed.listTasks',
     permission: 'workspace',
-    params: ManagedProjectScopedParamsSchema,
+    params: AnyParamsSchema,
     handler: (p, ctx) =>
       forwardRpc('managed.listTasks', { project_id: p?.project_id || p?.projectId || '' }, p, ctx)
   }),
@@ -289,7 +235,7 @@ export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.listActivity',
     permission: 'workspace',
-    params: ManagedActivityParamsSchema,
+    params: AnyParamsSchema,
     handler: (p, ctx) =>
       forwardRpc(
         'managed.listActivity',

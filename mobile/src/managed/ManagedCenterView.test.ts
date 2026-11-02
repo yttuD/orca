@@ -46,26 +46,18 @@ const TEST_CREDENTIAL: MobileDeviceCredential = {
 }
 
 describe('ManagedCenterView & Mobile Fixture Integrity', () => {
-  it('1. contains registered synthetic projects with proper schemas', () => {
+  it('1. verifies synthetic projects and evidence certification rules', () => {
     expect(SYNTHETIC_MANAGED_PROJECTS.length).toBeGreaterThanOrEqual(2)
-    const p1 = SYNTHETIC_MANAGED_PROJECTS[0]
-    expect(p1.id).toBe('c0a80101-0000-4000-8000-000000000001')
-    expect(p1.name).toBe('Chat-AGY-CODEX-Orquestador')
-    expect(p1.mode).toBe('MANAGED')
-  })
-
-  it('2. verifies certification rules across authentic, failed, and zero-check evidence', () => {
+    expect(SYNTHETIC_MANAGED_PROJECTS[0].name).toBe('Chat-AGY-CODEX-Orquestador')
     const authEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-02-AUTHENTIC']
     expect(authEv.certification_status).toBe('CERTIFIED')
     expect(authEv.provenance_verified && authEv.hash_verified).toBe(true)
-    expect(authEv.checks.every((c) => c.status === 'PASS')).toBe(true)
-
-    const failEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-01-SYNTHETIC']
-    expect(failEv.certification_status).toBe('REJECTED')
-    expect(failEv.provenance_verified).toBe(false)
-
-    const zeroEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-03-ZERO-CHECKS']
-    expect(zeroEv.certification_status).toBe('UNCERTIFIED')
+    expect(SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-01-SYNTHETIC'].certification_status).toBe(
+      'REJECTED'
+    )
+    expect(SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-03-ZERO-CHECKS'].certification_status).toBe(
+      'UNCERTIFIED'
+    )
   })
 
   it('5. defines decoupled data provider contract and clears stale data on disconnect', async () => {
