@@ -1,6 +1,8 @@
 import {
   verifyHostFingerprint,
-  SecureTrustedHostStore
+  SecureTrustedHostStore,
+  setTestSecureStorageDriver,
+  createMemoryStorageDriver
 } from '../../mobile/src/managed/trusted-host-store'
 
 export type SecurityAssertionResult = {
@@ -173,6 +175,7 @@ export async function runPhone06SecurityAssertions(params: {
 
   // 8. Key substitution rejected by SecureTrustedHostStore
   try {
+    setTestSecureStorageDriver(createMemoryStorageDriver())
     const store = new SecureTrustedHostStore()
     const origKey = 'KMsCWIv+fW3YU4ywFIr+r66+dczkegsvhEA2OKbvJnk='
     const alienKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
