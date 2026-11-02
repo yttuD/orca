@@ -49,12 +49,15 @@ def main():
 
         # 3. Wait for pending device and "Aprobar" button inside mobile devices table
         approve_btn_selector = "#mobile-devices-tbody button:has-text('Aprobar')"
-        try:
-            page.wait_for_selector(approve_btn_selector, timeout=25000)
-        except Exception:
-            # Refresh devices list once more
+        found = False
+        for _ in range(35):
+            if page.locator(approve_btn_selector).count() > 0:
+                found = True
+                break
             page.evaluate("if (window.loadMobileDevices) window.loadMobileDevices();")
-            page.wait_for_selector(approve_btn_selector, timeout=25000)
+            time.sleep(1)
+        if not found:
+            page.wait_for_selector(approve_btn_selector, timeout=5000)
 
         # 4. Capture screenshot of Windows Operator UI with device in PENDING_APPROVAL
         pending_shot = out_dir / "windows-operator-01-pending.png"
