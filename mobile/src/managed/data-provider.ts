@@ -50,7 +50,7 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       if (
         this.authError.includes('PENDING_APPROVAL') ||
         this.authError.includes('PENDING_OPERATOR_APPROVAL') ||
-        this.authError.toUpperCase().includes('PENDING')
+        this.authError.includes('DEVICE_REGISTRATION_PENDING')
       ) {
         return 'PENDING_APPROVAL'
       }

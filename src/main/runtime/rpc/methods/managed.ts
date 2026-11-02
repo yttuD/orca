@@ -69,6 +69,7 @@ const ManagedActivityParamsSchema = z
     ...ManagedAuthFields
   })
   .optional()
+  .optional()
 
 function extractCallerAuth(
   params: Record<string, unknown> | undefined,
@@ -221,14 +222,14 @@ export const MANAGED_RPC_METHODS = [
         if (res.ok) {
           return { ok: true, status: 'AUTHORIZED' }
         }
-        const errMsg = String(res.error_message || res.error_code || '')
-        if (errMsg.includes('PENDING')) {
+        const msg = String(res.error_message || res.error_code || '')
+        if (msg.includes('PENDING')) {
           return { ok: true, status: 'PENDING_APPROVAL' }
         }
-        if (errMsg.includes('REVOKED')) {
+        if (msg.includes('REVOKED')) {
           return { ok: true, status: 'REVOKED' }
         }
-        return { ok: false, status: 'AUTH_REQUIRED', error: errMsg }
+        return { ok: false, status: 'AUTH_REQUIRED', error: msg }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         if (msg.includes('PENDING')) {

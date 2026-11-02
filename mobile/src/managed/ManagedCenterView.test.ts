@@ -5,9 +5,7 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   StyleSheet: { create: vi.fn((s) => s) }
 }))
-
 const secureStoreMock = new Map<string, string>()
-
 vi.mock('expo-secure-store', () => ({
   getItemAsync: vi.fn(async (k: string) => secureStoreMock.get(k) ?? null),
   setItemAsync: vi.fn(async (k: string, v: string) => {
@@ -18,7 +16,6 @@ vi.mock('expo-secure-store', () => ({
   }),
   WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked'
 }))
-
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
     getItem: vi.fn(async () => null),
@@ -161,12 +158,16 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     )
   })
 
-  it('7. separates states DEMO, UNPAIRED, CONNECTING, ONLINE, AUTH_REQUIRED, OFFLINE', async () => {
+  it('7. separates states DEMO, UNPAIRED, CONNECTING, ONLINE, AUTH_REQUIRED, PENDING_APPROVAL, OFFLINE', async () => {
     let returnAuthError = false
+    let returnPendingError = false
     const mockRpcClient = {
       request: async () => {
+        if (returnPendingError) {
+          throw new Error('DEVICE_REGISTRATION_PENDING: PENDING_OPERATOR_APPROVAL')
+        }
         if (returnAuthError) {
-          throw new Error('AUTH_REQUIRED: Device revoked or pending approval')
+          throw new Error('AUTH_REQUIRED: Device revoked or token expired')
         }
         return { projects: [] }
       },
@@ -191,6 +192,13 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     const st2 = await pairedProv.probeAuthentication()
     expect(st2).toBe('AUTH_REQUIRED')
     expect(pairedProv.getConnectionStatus()).toBe('AUTH_REQUIRED')
+
+    // Probe pending approval -> PENDING_APPROVAL
+    returnAuthError = false
+    returnPendingError = true
+    const st3 = await pairedProv.probeAuthentication()
+    expect(st3).toBe('PENDING_APPROVAL')
+    expect(pairedProv.getConnectionStatus()).toBe('PENDING_APPROVAL')
   })
 
   it('8. SecureTrustedHostStore validates independent fingerprint and rejects key substitution', async () => {
