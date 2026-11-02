@@ -25,15 +25,19 @@ export function executeWindowsOperatorApproval(params: {
   if (params.deviceId) {
     args.push('--device-id', params.deviceId)
   }
-  const stdout = execFileSync('python', args, {
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'inherit']
-  })
-  const lines = stdout.trim().split('\n')
-  const lastLine = lines.at(-1) || '{}'
   try {
-    return JSON.parse(lastLine) as OperatorApprovalResult
-  } catch {
-    return { ok: true, event: 'OPERATOR_UI_APPROVED' }
+    const stdout = execFileSync('python', args, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    const lines = stdout.trim().split('\n')
+    const lastLine = lines.at(-1) || '{}'
+    const parsed = JSON.parse(lastLine) as OperatorApprovalResult
+    if (!parsed || typeof parsed.ok !== 'boolean') {
+      return { ok: false, event: 'OPERATOR_UI_INVALID_OUTPUT' }
+    }
+    return parsed
+  } catch (err) {
+    return { ok: false, event: `OPERATOR_UI_EXEC_FAILED: ${String(err)}` }
   }
 }

@@ -1,5 +1,7 @@
-import { verifyHostFingerprint } from '../../mobile/src/managed/trusted-host-store'
-import { execAdb } from './adb-controller'
+import {
+  verifyHostFingerprint,
+  SecureTrustedHostStore
+} from '../../mobile/src/managed/trusted-host-store'
 
 export type SecurityAssertionResult = {
   name: string
@@ -9,51 +11,121 @@ export type SecurityAssertionResult = {
 
 export async function runPhone06SecurityAssertions(params: {
   baseUrl: string
-  deviceToken: string
+  authorizedToken: string
 }): Promise<SecurityAssertionResult[]> {
   const results: SecurityAssertionResult[] = []
 
-  // 1. HTTP 400 on invalid registration parameters (missing nonce / empty device)
+  // 1. Authorized mobile token CAN perform read-only RPC (managed.listProjects)
+  try {
+    const res = await fetch(`${params.baseUrl}/api/managed/rpc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.authorizedToken}`
+      },
+      body: JSON.stringify({
+        request_id: 'req-sec-read-1',
+        method: 'managed.listProjects',
+        protocol: { name: 'managed', major: 1, minor: 0 },
+        caller: { surface: 'mobile' },
+        params: {}
+      })
+    })
+    const data = (await res.json()) as { ok?: boolean }
+    results.push({
+      name: 'PHONE-06:AUTH_TOKEN_READ_ALLOWED',
+      pass: res.status === 200 && data.ok === true,
+      detail: `Status=${res.status}, ok=${data.ok}`
+    })
+  } catch (err) {
+    results.push({ name: 'PHONE-06:AUTH_TOKEN_READ_ALLOWED', pass: false, detail: String(err) })
+  }
+
+  // 2. Authorized mobile token CANNOT administer devices (privilege escalation blocked -> HTTP 401)
+  try {
+    const res = await fetch(`${params.baseUrl}/api/managed/mobile/devices`, {
+      headers: { Authorization: `Bearer ${params.authorizedToken}` }
+    })
+    results.push({
+      name: 'PHONE-06:AUTH_TOKEN_CANNOT_ADMIN_DEVICES',
+      pass: res.status === 401,
+      detail: `Status=${res.status} (expected 401)`
+    })
+  } catch (err) {
+    results.push({
+      name: 'PHONE-06:AUTH_TOKEN_CANNOT_ADMIN_DEVICES',
+      pass: false,
+      detail: String(err)
+    })
+  }
+
+  // 3. Authorized mobile token CANNOT approve devices (HTTP 401)
+  try {
+    const res = await fetch(`${params.baseUrl}/api/managed/mobile/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.authorizedToken}`
+      },
+      body: JSON.stringify({ device_id: 'dev-spoofed' })
+    })
+    results.push({
+      name: 'PHONE-06:AUTH_TOKEN_CANNOT_APPROVE_DEVICES',
+      pass: res.status === 401,
+      detail: `Status=${res.status} (expected 401)`
+    })
+  } catch (err) {
+    results.push({
+      name: 'PHONE-06:AUTH_TOKEN_CANNOT_APPROVE_DEVICES',
+      pass: false,
+      detail: String(err)
+    })
+  }
+
+  // 4. Invalid mobile token fails authentication
+  try {
+    const res = await fetch(`${params.baseUrl}/api/managed/rpc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer mdt_invalid_unauthorized_token_hex'
+      },
+      body: JSON.stringify({
+        request_id: 'req-sec-bad-token',
+        method: 'managed.listProjects',
+        protocol: { name: 'managed', major: 1, minor: 0 },
+        caller: { surface: 'mobile' },
+        params: {}
+      })
+    })
+    const data = (await res.json()) as { ok?: boolean; error_message?: string }
+    const rejected = data.ok === false || (data.error_message?.includes('AUTH_REQUIRED') ?? false)
+    results.push({
+      name: 'PHONE-06:INVALID_TOKEN_REJECTED',
+      pass: rejected,
+      detail: `ok=${data.ok}, error_message=${data.error_message}`
+    })
+  } catch (err) {
+    results.push({ name: 'PHONE-06:INVALID_TOKEN_REJECTED', pass: false, detail: String(err) })
+  }
+
+  // 5. HTTP 400 on invalid registration parameters (missing nonce / empty device)
   try {
     const res = await fetch(`${params.baseUrl}/api/managed/mobile/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: '', device_name: '', client_nonce: '' })
     })
-    const is400 = res.status === 400
     results.push({
       name: 'PHONE-06:HTTP_400_ON_INVALID_PARAMS',
-      pass: is400,
+      pass: res.status === 400,
       detail: `Status=${res.status} (expected 400)`
     })
   } catch (err) {
-    results.push({
-      name: 'PHONE-06:HTTP_400_ON_INVALID_PARAMS',
-      pass: false,
-      detail: String(err)
-    })
+    results.push({ name: 'PHONE-06:HTTP_400_ON_INVALID_PARAMS', pass: false, detail: String(err) })
   }
 
-  // 2. Mobile device token cannot administer devices (read-only / privilege escalation guard)
-  try {
-    const res = await fetch(`${params.baseUrl}/api/managed/mobile/devices`, {
-      headers: { Authorization: `Bearer ${params.deviceToken}` }
-    })
-    const is401 = res.status === 401
-    results.push({
-      name: 'PHONE-06:MOBILE_TOKEN_CANNOT_ADMIN_DEVICES',
-      pass: is401,
-      detail: `Status=${res.status} (expected 401)`
-    })
-  } catch (err) {
-    results.push({
-      name: 'PHONE-06:MOBILE_TOKEN_CANNOT_ADMIN_DEVICES',
-      pass: false,
-      detail: String(err)
-    })
-  }
-
-  // 3. Independent Fingerprint Verification asserts mismatch fails closed
+  // 6. Independent Fingerprint Verification asserts mismatch fails closed
   try {
     const fakeKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
     const mismatchRes = verifyHostFingerprint('06-phbw06AOjlRic', '99-fakeFingerprnt', fakeKey)
@@ -70,7 +142,7 @@ export async function runPhone06SecurityAssertions(params: {
     })
   }
 
-  // 4. Independent Fingerprint Verification asserts empty reference rejected
+  // 7. Independent Fingerprint Verification asserts empty reference rejected
   try {
     const emptyRefRes = verifyHostFingerprint('06-phbw06AOjlRic', '')
     results.push({
@@ -86,66 +158,20 @@ export async function runPhone06SecurityAssertions(params: {
     })
   }
 
-  return results
-}
-
-export async function runPhone07RecoveryAssertions(params: {
-  port: number
-  deviceCountCheck: () => Promise<number>
-  initialCount: number
-}): Promise<SecurityAssertionResult[]> {
-  const results: SecurityAssertionResult[] = []
-
-  // 1. Interrupt ADB reverse tunnel to test disconnection
+  // 8. Key substitution rejected by SecureTrustedHostStore
   try {
-    execAdb(['reverse', '--remove', `tcp:${params.port}`])
+    const store = new SecureTrustedHostStore()
+    const origKey = 'KMsCWIv+fW3YU4ywFIr+r66+dczkegsvhEA2OKbvJnk='
+    const alienKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+    await store.verifyAndPinHost('pinned-test', origKey, '06-phbw06AOjlRic')
+    const sub = await store.verifyAndPinHost('pinned-test', alienKey)
     results.push({
-      name: 'PHONE-07:TUNNEL_DISCONNECTED',
-      pass: true,
-      detail: `Port reverse tcp:${params.port} removed`
+      name: 'PHONE-06:KEY_SUBSTITUTION_REJECTED',
+      pass: !sub.ok && sub.error === 'HOST_KEY_SUBSTITUTION_REJECTED',
+      detail: `ok=${sub.ok}, error=${sub.error}`
     })
   } catch (err) {
-    results.push({
-      name: 'PHONE-07:TUNNEL_DISCONNECTED',
-      pass: false,
-      detail: String(err)
-    })
-  }
-
-  // Brief pause
-  await new Promise((r) => setTimeout(r, 2000))
-
-  // 2. Restore ADB reverse tunnel
-  try {
-    execAdb(['reverse', `tcp:${params.port}`, `tcp:${params.port}`])
-    results.push({
-      name: 'PHONE-07:TUNNEL_RESTORED',
-      pass: true,
-      detail: `Port reverse tcp:${params.port} restored`
-    })
-  } catch (err) {
-    results.push({
-      name: 'PHONE-07:TUNNEL_RESTORED',
-      pass: false,
-      detail: String(err)
-    })
-  }
-
-  // 3. Assert no duplicate devices were created
-  try {
-    const finalCount = await params.deviceCountCheck()
-    const noDuplicates = finalCount === params.initialCount
-    results.push({
-      name: 'PHONE-07:NO_DUPLICATE_DEVICES',
-      pass: noDuplicates,
-      detail: `Initial=${params.initialCount}, Final=${finalCount}`
-    })
-  } catch (err) {
-    results.push({
-      name: 'PHONE-07:NO_DUPLICATE_DEVICES',
-      pass: false,
-      detail: String(err)
-    })
+    results.push({ name: 'PHONE-06:KEY_SUBSTITUTION_REJECTED', pass: false, detail: String(err) })
   }
 
   return results

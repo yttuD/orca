@@ -3,6 +3,7 @@ import {
   computeFingerprintFromPublicKey,
   verifyIndependentFingerprint,
   verifyHostFingerprint,
+  normalizeHostPublicKey,
   SecureTrustedHostStore,
   createMemoryStorageDriver,
   setTestSecureStorageDriver,
@@ -88,7 +89,25 @@ describe('Independent Fingerprint and Secure Trusted Host Store', () => {
     expect(store.getTrustedHostKey('host-pinned')).toBe(PYTHON_PUBLIC_KEY)
   })
 
-  it('6. persists credential and recovers from secure storage', async () => {
+  it('6. normalizes host_public_key and public_key fields properly', () => {
+    expect(normalizeHostPublicKey({ host_public_key: PYTHON_PUBLIC_KEY })).toBe(PYTHON_PUBLIC_KEY)
+    expect(normalizeHostPublicKey({ public_key: PYTHON_PUBLIC_KEY })).toBe(PYTHON_PUBLIC_KEY)
+    expect(normalizeHostPublicKey({ publicKeyB64: PYTHON_PUBLIC_KEY })).toBe(PYTHON_PUBLIC_KEY)
+    expect(normalizeHostPublicKey({ host_public_key: 'short' })).toBe('')
+    expect(normalizeHostPublicKey(null)).toBe('')
+  })
+
+  it('7. refuses to store a truncated fingerprint as a substitute for public key', async () => {
+    const store = new SecureTrustedHostStore()
+    await expect(store.persistKey('host-test', PYTHON_FINGERPRINT)).rejects.toThrow(
+      'CANNOT_STORE_FINGERPRINT_AS_PUBLIC_KEY'
+    )
+    const validSave = await store.persistKey('host-test', PYTHON_PUBLIC_KEY)
+    expect(validSave).toBe(true)
+    expect(await store.loadPersistentKey('host-test')).toBe(PYTHON_PUBLIC_KEY)
+  })
+
+  it('8. persists credential and recovers from secure storage', async () => {
     const cred: MobileDeviceCredential = {
       deviceId: 'motog20-1',
       deviceName: 'Motorola Moto G20',
@@ -104,7 +123,6 @@ describe('Independent Fingerprint and Secure Trusted Host Store', () => {
     }
     const saved = await saveStoredCredential(cred, 'host-pinned')
     expect(saved).toBe(true)
-
     const loaded = await loadStoredCredential('host-pinned')
     expect(loaded).toEqual(cred)
   })

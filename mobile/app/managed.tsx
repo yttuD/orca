@@ -9,6 +9,8 @@ import {
   loadStoredCredential,
   saveStoredCredential,
   verifyHostFingerprint,
+  normalizeHostPublicKey,
+  computeFingerprintFromPublicKey,
   SecureTrustedHostStore
 } from '../src/managed/trusted-host-store'
 import type { MobileConnectionStatus, MobileDeviceCredential } from '../src/managed/types'
@@ -157,49 +159,53 @@ export default function NativeManagedRoute(): React.JSX.Element {
         if (!hostIdentityRes.ok) {
           throw new Error(hostIdentityRes.error.message || 'HOST_IDENTITY_FAILED')
         }
-        const hostIdentity = hostIdentityRes.result as {
-          fingerprint?: string
-          host_fingerprint?: string
-          host_public_key?: string
-          host_id?: string
+        const hostIdentity = hostIdentityRes.result
+        const hostFp = ((hostIdentity as Record<string, unknown>)?.fingerprint ||
+          (hostIdentity as Record<string, unknown>)?.host_fingerprint ||
+          '') as string
+        const hostPubKey = normalizeHostPublicKey(hostIdentity)
+        if (!hostPubKey) {
+          throw new Error('HOST_PUBLIC_KEY_REQUIRED')
         }
-        const hostFp = hostIdentity?.fingerprint || hostIdentity?.host_fingerprint
-        const hostPubKey = hostIdentity?.host_public_key
-        if (!hostFp) {
-          throw new Error('HOST_IDENTITY_UNAVAILABLE')
+        const computedFp = computeFingerprintFromPublicKey(hostPubKey)
+        if (hostFp && hostFp !== computedFp) {
+          throw new Error('HOST_FINGERPRINT_CORRUPTED')
         }
 
-        // Independent fingerprint verification: out-of-band param or pinned key
-        const independentRef = expectedFingerprint || pin
         const trustedStore = new SecureTrustedHostStore()
+        const pinnedKey = await trustedStore.loadPersistentKey(activeHost.id)
 
-        let verifiedFp: string
-        if (independentRef) {
-          const check = verifyHostFingerprint(hostFp, independentRef, hostPubKey)
-          if (!check.ok) {
-            const errStr = `FINGERPRINT_MISMATCH: ${check.reason} (esperado: ${independentRef}, recibido: ${hostFp})`
+        let verifiedPubKey: string
+        if (pinnedKey) {
+          if (pinnedKey !== hostPubKey) {
+            const errStr = 'HOST_KEY_SUBSTITUTION_REJECTED: Pinned key mismatch'
             setStatusDetail(errStr)
             setConnectionStatus('AUTH_REQUIRED')
             throw new Error(errStr)
           }
-          verifiedFp = independentRef.trim()
+          verifiedPubKey = pinnedKey
         } else {
-          const pinnedKey = await trustedStore.loadPersistentKey(activeHost.id)
-          if (pinnedKey) {
-            const check = verifyHostFingerprint(hostFp, hostFp, pinnedKey)
-            if (!check.ok) {
-              const errStr = `HOST_KEY_SUBSTITUTION_REJECTED: ${check.reason}`
-              setStatusDetail(errStr)
-              setConnectionStatus('AUTH_REQUIRED')
-              throw new Error(errStr)
-            }
-            verifiedFp = hostFp
-          } else {
+          // Require independent out-of-band reference from operator or paired profile
+          const independentRef =
+            expectedFingerprint ||
+            pin ||
+            (activeHost.publicKeyB64
+              ? computeFingerprintFromPublicKey(activeHost.publicKeyB64)
+              : undefined)
+          if (!independentRef) {
             const errStr = 'INDEPENDENT_REFERENCE_REQUIRED: Se requiere referencia independiente'
             setStatusDetail(errStr)
             setConnectionStatus('AUTH_REQUIRED')
             throw new Error(errStr)
           }
+          const check = verifyHostFingerprint(computedFp, independentRef, hostPubKey)
+          if (!check.ok) {
+            const errStr = `FINGERPRINT_MISMATCH: ${check.reason}`
+            setStatusDetail(errStr)
+            setConnectionStatus('AUTH_REQUIRED')
+            throw new Error(errStr)
+          }
+          verifiedPubKey = hostPubKey
         }
 
         const devId = `motog20-${Date.now().toString(36)}`
@@ -207,14 +213,14 @@ export default function NativeManagedRoute(): React.JSX.Element {
           deviceId: devId,
           deviceName: 'Motorola Moto G20',
           clientNonce: `cnonce-${Date.now()}`,
-          confirmedFingerprint: verifiedFp
+          confirmedFingerprint: computedFp
         })
         if (!regRes.ok) {
           throw new Error(regRes.error.message || 'REGISTRATION_FAILED')
         }
         const regData = regRes.result as { ok: boolean; credential: MobileDeviceCredential }
         if (regData.ok && regData.credential) {
-          await trustedStore.persistKey(activeHost.id, hostPubKey || verifiedFp)
+          await trustedStore.persistKey(activeHost.id, verifiedPubKey)
           await saveStoredCredential(regData.credential, activeHost.id)
           setCredential(regData.credential)
           setConnectionStatus('PENDING_APPROVAL')

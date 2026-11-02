@@ -6,7 +6,7 @@ import type { MobileDeviceCredential } from './types'
 const STORAGE_PREFIX = 'orca.managed.trusted_host.'
 const CREDENTIAL_STORAGE_PREFIX = 'orca.managed.credential.'
 
-export interface SecureStorageDriver {
+export type SecureStorageDriver = {
   getItem: (key: string) => Promise<string | null>
   setItem: (key: string, value: string) => Promise<void>
   deleteItem: (key: string) => Promise<void>
@@ -57,10 +57,7 @@ async function safeGetItem(key: string): Promise<string | null> {
     const SecureStore = require('expo-secure-store') as {
       getItemAsync?: (k: string) => Promise<string | null>
     }
-    if (!SecureStore?.getItemAsync) {
-      return null
-    }
-    return (await SecureStore.getItemAsync(key)) ?? null
+    return (await SecureStore?.getItemAsync?.(key)) ?? null
   } catch {
     return null
   }
@@ -109,9 +106,7 @@ async function safeDeleteItem(key: string): Promise<void> {
   if (testStorageDriver) {
     try {
       await testStorageDriver.deleteItem(key)
-    } catch {
-      // Ignore deletion errors on fail-closed cleanup
-    }
+    } catch {}
     return
   }
   try {
@@ -132,9 +127,7 @@ async function safeDeleteItem(key: string): Promise<void> {
       deleteItemAsync?: (k: string) => Promise<void>
     }
     await SecureStore?.deleteItemAsync?.(key)
-  } catch {
-    // Ignore deletion errors on fail-closed cleanup
-  }
+  } catch {}
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -145,6 +138,19 @@ function toBase64Url(bytes: Uint8Array): string {
 export function computeFingerprintFromPublicKey(publicKeyB64: string): string {
   const bytes = decodeBase64Bytes(publicKeyB64)
   return toBase64Url(sha256(bytes)).slice(0, 16)
+}
+
+export function normalizeHostPublicKey(identity: unknown): string {
+  if (!identity || typeof identity !== 'object') {
+    return ''
+  }
+  const obj = identity as Record<string, unknown>
+  const cand = (obj.host_public_key || obj.public_key || obj.publicKeyB64 || '') as string
+  if (typeof cand !== 'string') {
+    return ''
+  }
+  const clean = cand.trim()
+  return clean.length >= 32 ? clean : ''
 }
 
 export function verifyIndependentFingerprint(
@@ -192,8 +198,10 @@ export class SecureTrustedHostStore implements TrustedHostStore {
   }
 
   setTrustedHostKey(hostId: string, publicKey: string): void {
-    this.memoryCache.set(hostId, publicKey)
-    void this.persistKey(hostId, publicKey)
+    if (publicKey && publicKey.length >= 32) {
+      this.memoryCache.set(hostId, publicKey)
+      void this.persistKey(hostId, publicKey)
+    }
   }
 
   async loadPersistentKey(hostId: string): Promise<string | null> {
@@ -208,6 +216,9 @@ export class SecureTrustedHostStore implements TrustedHostStore {
   }
 
   async persistKey(hostId: string, publicKey: string): Promise<boolean> {
+    if (!publicKey || publicKey.length < 32) {
+      throw new Error('CANNOT_STORE_FINGERPRINT_AS_PUBLIC_KEY')
+    }
     const key = `${STORAGE_PREFIX}${hostId}`
     const success = await safeSetItem(key, publicKey)
     if (success) {
@@ -230,6 +241,9 @@ export class SecureTrustedHostStore implements TrustedHostStore {
     independentFingerprint?: string,
     allowOverride = false
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!hostPublicKeyB64 || hostPublicKeyB64.length < 32) {
+      return { ok: false, error: 'INVALID_PUBLIC_KEY' }
+    }
     const existing = await this.loadPersistentKey(hostId)
     if (existing && existing !== hostPublicKeyB64) {
       if (!allowOverride) {
