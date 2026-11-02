@@ -39,14 +39,29 @@ export type ManagedEvidenceItem = {
   readonly summary?: string
 }
 
+export type ManagedCheckDTO = {
+  readonly name: string
+  readonly status: 'PASS' | 'FAIL' | 'BLOCKED' | 'NOT_RUN' | 'SKIPPED' | 'ERROR' | string
+  readonly exit_code?: number | null
+}
+
+export type ManagedChecksSummary = {
+  readonly passed: number
+  readonly failed: number
+  readonly total: number
+}
+
 export type ManagedEvidenceDTO = {
   readonly project_id: string
   readonly task_id: string
   readonly attempt_id?: string | null
   readonly evidence_status: 'AVAILABLE' | 'NOT_FOUND' | 'NOT_RUN' | 'UNVERIFIED' | 'ERROR'
+  readonly provenance: 'AUTHENTIC' | 'SYNTHETIC' | 'UNVERIFIED' | string
+  readonly hash_status: 'VERIFIED' | 'MISMATCH' | 'NOT_RUN' | string
   readonly execution_mode: string
   readonly is_synthetic: boolean
-  readonly checks: readonly Record<string, unknown>[]
+  readonly checks_summary?: ManagedChecksSummary
+  readonly checks: readonly ManagedCheckDTO[]
   readonly artifacts: readonly string[]
   readonly canonical_sha256?: string | null
   readonly result_sha?: string | null
@@ -59,6 +74,8 @@ export type ManagedReviewPacketDTO = {
   readonly task_id: string
   readonly attempt_id?: string | null
   readonly packet_status: 'AVAILABLE' | 'NOT_FOUND' | 'NOT_RUN' | 'UNVERIFIED' | 'ERROR'
+  readonly provenance: 'AUTHENTIC' | 'SYNTHETIC' | 'UNVERIFIED' | string
+  readonly hash_status: 'VERIFIED' | 'MISMATCH' | 'NOT_RUN' | string
   readonly is_synthetic: boolean
   readonly execution_type: string
   readonly status: string
@@ -70,6 +87,8 @@ export type ManagedReviewPacketDTO = {
   readonly process_exit_code?: number | null
   readonly verdict?: string | null
   readonly checks_count: number
+  readonly checks_summary?: ManagedChecksSummary
+  readonly checks?: readonly ManagedCheckDTO[]
   readonly markdown_packet?: string | null
 }
 

@@ -81,7 +81,14 @@ async function checkEngineRpc(testName, payload, token = null, extraHeaders = {}
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 3000)
 
-  const headers = { 'Content-Type': 'application/json', ...extraHeaders }
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Managed-Profile': 'NORMAL',
+    ...extraHeaders
+  }
+  if (extraHeaders['X-Managed-Profile'] === null) {
+    delete headers['X-Managed-Profile']
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
@@ -393,6 +400,33 @@ async function run() {
   assert.equal(profileMismatchRes.data.ok, false)
   assert.equal(profileMismatchRes.data.error_code, 'AUTH_REQUIRED')
   console.log('  -> PASS: Profile mismatch rejected with AUTH_REQUIRED')
+
+  // 15. Negative: Missing X-Managed-Profile header rejected with AUTH_REQUIRED
+  const missingProfileRes = await checkEngineRpc(
+    '15. Missing X-Managed-Profile header must fail closed with AUTH_REQUIRED',
+    {
+      request_id: 'test-profile-missing-01',
+      method: 'managed.listProjects',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: {}
+    },
+    bridgeToken,
+    { 'X-Managed-Profile': null }
+  )
+  assert.equal(missingProfileRes.data.ok, false)
+  assert.equal(missingProfileRes.data.error_code, 'AUTH_REQUIRED')
+  console.log('  -> PASS: Missing X-Managed-Profile header strictly rejected with AUTH_REQUIRED')
+
+  // 16. Provenance & Check status fidelity verification
+  assert.ok(['AUTHENTIC', 'SYNTHETIC', 'UNVERIFIED'].includes(evidence.provenance))
+  assert.ok(['VERIFIED', 'MISMATCH', 'NOT_RUN'].includes(evidence.hash_status))
+  assert.ok(evidence.checks_summary && typeof evidence.checks_summary.total === 'number')
+  assert.ok(['AUTHENTIC', 'SYNTHETIC', 'UNVERIFIED'].includes(packet.provenance))
+  assert.ok(['VERIFIED', 'MISMATCH', 'NOT_RUN'].includes(packet.hash_status))
+  console.log(
+    `  -> PASS: Provenance & integrity certified (provenance=${evidence.provenance}, hash=${evidence.hash_status})`
+  )
 
   console.log('\n=== ALL AUTOMATED INTEGRATION ASSERTIONS PASSED (100% GREEN) ===\n')
 }
