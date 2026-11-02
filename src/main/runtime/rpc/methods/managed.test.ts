@@ -153,4 +153,32 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     expect(methodNames).not.toContain('managed.requestPause')
     expect(methodNames).not.toContain('managed.requestStop')
   })
+
+  it('7. strictly binds deviceId to transport ctx.pairedDeviceId and rejects spoofing', async () => {
+    const res = await dispatchManaged(
+      'managed.listProjects',
+      { _auth: { deviceId: 'spoofed-id' } },
+      { clientKind: 'mobile', pairedDeviceId: 'authenticated-id' }
+    )
+    expect(res.ok).toBe(false)
+    expect(JSON.stringify(res.error)).toContain('DEVICE_IDENTITY_SPOOF_REJECTED')
+  })
+
+  it('8. prioritizes ctx.pairedDeviceId over omitted client deviceId', async () => {
+    vi.mocked(managedResolver.callEngineRpc).mockResolvedValueOnce({
+      ok: true,
+      data: { projects: [] }
+    })
+    const res = await dispatchManaged(
+      'managed.listProjects',
+      { _auth: { deviceToken: 'tok-123' } },
+      { clientKind: 'mobile', pairedDeviceId: 'authenticated-id' }
+    )
+    expect(res.ok).toBe(true)
+    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith(
+      'managed.listProjects',
+      {},
+      expect.objectContaining({ deviceId: 'authenticated-id', deviceToken: 'tok-123' })
+    )
+  })
 })

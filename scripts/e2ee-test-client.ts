@@ -1,12 +1,6 @@
-import { WebSocket, type WebSocketServer } from 'ws'
+import { WebSocket } from 'ws'
 import nacl from 'tweetnacl'
-import {
-  deriveSharedKey,
-  e2eeDecrypt,
-  e2eeEncrypt,
-  type E2EEState
-} from '../mobile/scripts/mock-server-encryption'
-import type { RpcDispatcher } from '../src/main/runtime/rpc/dispatcher'
+import { deriveSharedKey, e2eeDecrypt, e2eeEncrypt } from '../mobile/scripts/mock-server-encryption'
 
 export type RpcResponsePayload = {
   ok: boolean
@@ -147,68 +141,4 @@ export class AuthenticE2eeMobileRpcClient {
   close(): void {
     this.ws?.close()
   }
-}
-
-export function setupDesktopRpcServer(
-  wss: WebSocketServer,
-  dispatcher: RpcDispatcher,
-  desktopKeyPair: nacl.BoxKeyPair
-): void {
-  const connectionMap = new Map<WebSocket, E2EEState>()
-
-  wss.on('connection', (ws) => {
-    ws.on('message', (raw) => {
-      const msg = typeof raw === 'string' ? raw : raw.toString('utf-8')
-      const e2ee = connectionMap.get(ws)
-
-      if (!e2ee) {
-        const hello = JSON.parse(msg) as { type?: string; publicKeyB64?: string }
-        if (hello.type === 'e2ee_hello' && hello.publicKeyB64) {
-          const clientPk = Uint8Array.from(Buffer.from(hello.publicKeyB64, 'base64'))
-          const sharedKey = deriveSharedKey(desktopKeyPair.secretKey, clientPk)
-          connectionMap.set(ws, { sharedKey, deviceToken: null, authenticated: false })
-          ws.send(JSON.stringify({ type: 'e2ee_ready' }))
-        }
-        return
-      }
-
-      const plaintext = e2eeDecrypt(msg, e2ee.sharedKey)
-      if (!plaintext) {
-        return
-      }
-
-      const req = JSON.parse(plaintext) as {
-        id: string
-        method: string
-        params?: Record<string, unknown>
-        type?: string
-        deviceToken?: string
-      }
-
-      if (!e2ee.authenticated) {
-        if (req.type === 'e2ee_auth') {
-          e2ee.deviceToken = req.deviceToken ?? null
-          e2ee.authenticated = true
-          ws.send(e2eeEncrypt(JSON.stringify({ type: 'e2ee_authenticated' }), e2ee.sharedKey))
-        }
-        return
-      }
-
-      void dispatcher.dispatchStreaming(
-        {
-          id: req.id,
-          authToken: e2ee.deviceToken ?? '',
-          method: req.method,
-          params: req.params ?? {}
-        },
-        (respStr) => {
-          ws.send(e2eeEncrypt(respStr, e2ee.sharedKey))
-        },
-        {
-          clientKind: 'mobile',
-          pairedDeviceId: (req.params?._auth as { deviceId?: string })?.deviceId ?? 'pixel-8-e2e'
-        }
-      )
-    })
-  })
 }

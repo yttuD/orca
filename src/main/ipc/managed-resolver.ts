@@ -21,10 +21,29 @@ export function resolveProfileAndToken(): ManagedProfileConfig {
     }
   }
 
+  if (process.env.MANAGED_PORT && Number(process.env.MANAGED_PORT)) {
+    port = Number(process.env.MANAGED_PORT)
+  }
+
   // Check for unambiguous .active_profile JSON descriptor
   let currentDir = process.cwd()
   let activeProfileMetadata: Record<string, unknown> | null = null
-  for (let i = 0; i < 4; i++) {
+
+  if (
+    process.env.MANAGED_ACTIVE_PROFILE_PATH &&
+    existsSync(process.env.MANAGED_ACTIVE_PROFILE_PATH)
+  ) {
+    try {
+      const parsed = JSON.parse(readFileSync(process.env.MANAGED_ACTIVE_PROFILE_PATH, 'utf8'))
+      if (parsed && typeof parsed.profile === 'string') {
+        activeProfileMetadata = parsed
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  for (let i = 0; i < 4 && !activeProfileMetadata; i++) {
     const candidatePaths = [
       resolve(currentDir, '.active_profile'),
       resolve(currentDir, 'workspaces', 'staging', '.active_profile'),

@@ -65,20 +65,25 @@ function extractCallerAuth(
   }
 
   const authObj = params?._auth as Record<string, unknown> | undefined
-  const deviceId = String(
-    authObj?.deviceId ||
-      params?.deviceId ||
-      params?.device_id ||
-      ctx?.pairedDeviceId ||
-      'unknown-mobile'
-  )
+  const untrustedDeviceId =
+    (authObj?.deviceId as string | undefined) ??
+    (params?.deviceId as string | undefined) ??
+    (params?.device_id as string | undefined)
+
+  if (ctx?.pairedDeviceId && untrustedDeviceId && untrustedDeviceId !== ctx.pairedDeviceId) {
+    throw new Error(
+      `DEVICE_IDENTITY_SPOOF_REJECTED: transport device is '${ctx.pairedDeviceId}' but payload claimed '${untrustedDeviceId}'`
+    )
+  }
+
+  const deviceId = String(ctx?.pairedDeviceId || untrustedDeviceId || 'unknown-mobile')
   const deviceToken = authObj?.deviceToken
     ? String(authObj.deviceToken)
     : params?.deviceToken
       ? String(params.deviceToken)
       : params?.device_token
         ? String(params.device_token)
-        : undefined
+        : ctx?.clientId
 
   const nonce = authObj?.nonce
     ? String(authObj.nonce)

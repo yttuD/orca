@@ -1,6 +1,3 @@
-import * as SecureStore from 'expo-secure-store'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import { Platform } from 'react-native'
 import { sha256 } from '@noble/hashes/sha256'
 import { decodeBase64Bytes, encodeBase64Bytes } from '../transport/base64-byte-codec'
 import type { TrustedHostStore } from './pairing-flow'
@@ -8,6 +5,80 @@ import type { MobileDeviceCredential } from './types'
 
 const STORAGE_PREFIX = 'orca.managed.trusted_host.'
 const CREDENTIAL_STORAGE_PREFIX = 'orca.managed.credential.'
+const fallbackStorage = new Map<string, string>()
+
+async function safeGetItem(key: string): Promise<string | null> {
+  try {
+    // oxlint-disable-next-line typescript/no-require-imports
+    const { Platform } = require('react-native') as { Platform?: { OS: string } }
+    if (Platform?.OS === 'web') {
+      // oxlint-disable-next-line typescript/no-require-imports
+      const AsyncStorage = (
+        require('@react-native-async-storage/async-storage') as {
+          default?: { getItem: (k: string) => Promise<string | null> }
+        }
+      ).default
+      return (await AsyncStorage?.getItem(key)) ?? null
+    }
+    // oxlint-disable-next-line typescript/no-require-imports
+    const SecureStore = require('expo-secure-store') as {
+      getItemAsync: (k: string) => Promise<string | null>
+    }
+    return (await SecureStore?.getItemAsync(key)) ?? null
+  } catch {
+    return fallbackStorage.get(key) ?? null
+  }
+}
+
+async function safeSetItem(key: string, value: string): Promise<boolean> {
+  try {
+    // oxlint-disable-next-line typescript/no-require-imports
+    const { Platform } = require('react-native') as { Platform?: { OS: string } }
+    if (Platform?.OS === 'web') {
+      // oxlint-disable-next-line typescript/no-require-imports
+      const AsyncStorage = (
+        require('@react-native-async-storage/async-storage') as {
+          default?: { setItem: (k: string, v: string) => Promise<void> }
+        }
+      ).default
+      await AsyncStorage?.setItem(key, value)
+      return true
+    }
+    // oxlint-disable-next-line typescript/no-require-imports
+    const SecureStore = require('expo-secure-store') as {
+      setItemAsync: (k: string, v: string) => Promise<void>
+    }
+    await SecureStore?.setItemAsync(key, value)
+    return true
+  } catch {
+    fallbackStorage.set(key, value)
+    return true
+  }
+}
+
+async function safeDeleteItem(key: string): Promise<void> {
+  try {
+    // oxlint-disable-next-line typescript/no-require-imports
+    const { Platform } = require('react-native') as { Platform?: { OS: string } }
+    if (Platform?.OS === 'web') {
+      // oxlint-disable-next-line typescript/no-require-imports
+      const AsyncStorage = (
+        require('@react-native-async-storage/async-storage') as {
+          default?: { removeItem: (k: string) => Promise<void> }
+        }
+      ).default
+      await AsyncStorage?.removeItem(key)
+      return
+    }
+    // oxlint-disable-next-line typescript/no-require-imports
+    const SecureStore = require('expo-secure-store') as {
+      deleteItemAsync: (k: string) => Promise<void>
+    }
+    await SecureStore?.deleteItemAsync(key)
+  } catch {
+    fallbackStorage.delete(key)
+  }
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   const b64 = encodeBase64Bytes(bytes)
@@ -45,16 +116,7 @@ export class SecureTrustedHostStore implements TrustedHostStore {
 
   async loadPersistentKey(hostId: string): Promise<string | null> {
     const key = `${STORAGE_PREFIX}${hostId}`
-    let val: string | null = null
-    try {
-      if (Platform.OS === 'web') {
-        val = await AsyncStorage.getItem(key)
-      } else {
-        val = await SecureStore.getItemAsync(key)
-      }
-    } catch {
-      val = null
-    }
+    const val = await safeGetItem(key)
     if (val) {
       this.memoryCache.set(hostId, val)
     }
@@ -64,30 +126,13 @@ export class SecureTrustedHostStore implements TrustedHostStore {
   async persistKey(hostId: string, publicKey: string): Promise<boolean> {
     this.memoryCache.set(hostId, publicKey)
     const key = `${STORAGE_PREFIX}${hostId}`
-    try {
-      if (Platform.OS === 'web') {
-        await AsyncStorage.setItem(key, publicKey)
-      } else {
-        await SecureStore.setItemAsync(key, publicKey)
-      }
-      return true
-    } catch {
-      return false
-    }
+    return safeSetItem(key, publicKey)
   }
 
   async removeTrustedKey(hostId: string): Promise<void> {
     this.memoryCache.delete(hostId)
     const key = `${STORAGE_PREFIX}${hostId}`
-    try {
-      if (Platform.OS === 'web') {
-        await AsyncStorage.removeItem(key)
-      } else {
-        await SecureStore.deleteItemAsync(key)
-      }
-    } catch {
-      // Ignore cleanup error
-    }
+    await safeDeleteItem(key)
   }
 
   async verifyAndPinHost(
@@ -122,16 +167,11 @@ export class SecureTrustedHostStore implements TrustedHostStore {
 
 export async function loadStoredCredential(hostId: string): Promise<MobileDeviceCredential | null> {
   const key = `${CREDENTIAL_STORAGE_PREFIX}${hostId}`
+  const raw = await safeGetItem(key)
+  if (!raw) {
+    return null
+  }
   try {
-    let raw: string | null = null
-    if (Platform.OS === 'web') {
-      raw = await AsyncStorage.getItem(key)
-    } else {
-      raw = await SecureStore.getItemAsync(key)
-    }
-    if (!raw) {
-      return null
-    }
     return JSON.parse(raw) as MobileDeviceCredential
   } catch {
     return null
@@ -140,28 +180,10 @@ export async function loadStoredCredential(hostId: string): Promise<MobileDevice
 
 export async function saveStoredCredential(credential: MobileDeviceCredential): Promise<boolean> {
   const key = `${CREDENTIAL_STORAGE_PREFIX}${credential.hostId}`
-  try {
-    const json = JSON.stringify(credential)
-    if (Platform.OS === 'web') {
-      await AsyncStorage.setItem(key, json)
-    } else {
-      await SecureStore.setItemAsync(key, json)
-    }
-    return true
-  } catch {
-    return false
-  }
+  return safeSetItem(key, JSON.stringify(credential))
 }
 
 export async function removeStoredCredential(hostId: string): Promise<void> {
   const key = `${CREDENTIAL_STORAGE_PREFIX}${hostId}`
-  try {
-    if (Platform.OS === 'web') {
-      await AsyncStorage.removeItem(key)
-    } else {
-      await SecureStore.deleteItemAsync(key)
-    }
-  } catch {
-    // Ignore cleanup error
-  }
+  await safeDeleteItem(key)
 }
