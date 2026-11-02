@@ -24,4 +24,29 @@ describe('mobile RPC method routing census', () => {
     expect(MOBILE_RPC_METHOD_ROUTES.get('preflight.detectAgents')).toBe('execution-host')
     expect(MOBILE_RPC_METHOD_ROUTES.get('preflight.refreshAgents')).toBe('execution-host')
   })
+
+  it('routes allowed managed methods to paired desktop and rejects forbidden mutations', () => {
+    const allowed = [
+      'managed.listProjects',
+      'managed.listTasks',
+      'managed.getExecution',
+      'managed.getEvidence',
+      'managed.presentReviewPacket',
+      'managed.listActivity'
+    ]
+    for (const m of allowed) {
+      expect(MOBILE_RPC_METHOD_ROUTES.get(m)).toBe('paired-desktop')
+    }
+
+    const forbidden = [
+      'managed.requestDispatch',
+      'managed.approveVerdict',
+      'managed.requestPause',
+      'managed.requestStop',
+      'managed.mutateProject'
+    ]
+    for (const m of forbidden) {
+      expect(MOBILE_RPC_METHOD_ROUTES.has(m)).toBe(false)
+    }
+  })
 })

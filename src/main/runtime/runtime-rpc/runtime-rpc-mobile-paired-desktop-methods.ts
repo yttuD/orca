@@ -108,6 +108,13 @@ export const PAIRED_DESKTOP_METHODS = [
   'settings.updateTerminalQuickCommands',
   'terminal.getAutoRestoreFit',
   'terminal.setAutoRestoreFit',
+  // Managed Center: Read-only access to projects, tasks, execution, evidence and activity from Python FastAPI
+  'managed.listProjects',
+  'managed.listTasks',
+  'managed.getExecution',
+  'managed.getEvidence',
+  'managed.presentReviewPacket',
+  'managed.listActivity',
   // Per-section collapse, sidebar feed and icons exist only with ORCA_SIDEBAR_INPUTS=main.
   ...(ORCA_SIDEBAR_INPUTS_IS_MAIN
     ? (['ui.setCollapsed', 'sidebarInputs.read', 'sidebarInputs.repoIcons'] as const)
