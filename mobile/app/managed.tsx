@@ -5,16 +5,26 @@ import { ManagedCenterView } from '../src/managed/ManagedCenterView'
 import { EncryptedRpcManagedDataProvider } from '../src/managed/data-provider'
 import { useHostClient } from '../src/transport/host-client-hooks'
 import { loadHosts } from '../src/transport/host-store'
-import { loadStoredCredential, saveStoredCredential } from '../src/managed/trusted-host-store'
+import {
+  loadStoredCredential,
+  saveStoredCredential,
+  verifyHostFingerprint,
+  SecureTrustedHostStore
+} from '../src/managed/trusted-host-store'
 import type { MobileConnectionStatus, MobileDeviceCredential } from '../src/managed/types'
 import type { HostProfile } from '../src/transport/types'
 
 export default function NativeManagedRoute(): React.JSX.Element {
   const router = useRouter()
-  const { hostId } = useLocalSearchParams<{ hostId?: string }>()
+  const { hostId, expectedFingerprint, pin } = useLocalSearchParams<{
+    hostId?: string
+    expectedFingerprint?: string
+    pin?: string
+  }>()
   const [activeHost, setActiveHost] = useState<HostProfile | null>(null)
   const [credential, setCredential] = useState<MobileDeviceCredential | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<MobileConnectionStatus>('UNPAIRED')
+  const [, setStatusDetail] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -56,7 +66,7 @@ export default function NativeManagedRoute(): React.JSX.Element {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [hostId])
 
   const { client, state } = useHostClient(activeHost?.id)
 
@@ -142,6 +152,7 @@ export default function NativeManagedRoute(): React.JSX.Element {
     if (activeHost && client && state === 'connected') {
       try {
         setConnectionStatus('CONNECTING')
+        setStatusDetail(null)
         const hostIdentityRes = await client.sendRequest('managed.getHostIdentity', {})
         if (!hostIdentityRes.ok) {
           throw new Error(hostIdentityRes.error.message || 'HOST_IDENTITY_FAILED')
@@ -149,24 +160,61 @@ export default function NativeManagedRoute(): React.JSX.Element {
         const hostIdentity = hostIdentityRes.result as {
           fingerprint?: string
           host_fingerprint?: string
+          host_public_key?: string
           host_id?: string
         }
         const hostFp = hostIdentity?.fingerprint || hostIdentity?.host_fingerprint
+        const hostPubKey = hostIdentity?.host_public_key
         if (!hostFp) {
           throw new Error('HOST_IDENTITY_UNAVAILABLE')
         }
+
+        // Independent fingerprint verification: out-of-band param or pinned key
+        const independentRef = expectedFingerprint || pin
+        const trustedStore = new SecureTrustedHostStore()
+
+        let verifiedFp: string
+        if (independentRef) {
+          const check = verifyHostFingerprint(hostFp, independentRef, hostPubKey)
+          if (!check.ok) {
+            const errStr = `FINGERPRINT_MISMATCH: ${check.reason} (esperado: ${independentRef}, recibido: ${hostFp})`
+            setStatusDetail(errStr)
+            setConnectionStatus('AUTH_REQUIRED')
+            throw new Error(errStr)
+          }
+          verifiedFp = independentRef.trim()
+        } else {
+          const pinnedKey = await trustedStore.loadPersistentKey(activeHost.id)
+          if (pinnedKey) {
+            const check = verifyHostFingerprint(hostFp, hostFp, pinnedKey)
+            if (!check.ok) {
+              const errStr = `HOST_KEY_SUBSTITUTION_REJECTED: ${check.reason}`
+              setStatusDetail(errStr)
+              setConnectionStatus('AUTH_REQUIRED')
+              throw new Error(errStr)
+            }
+            verifiedFp = hostFp
+          } else {
+            const errStr = 'INDEPENDENT_REFERENCE_REQUIRED: Se requiere referencia independiente'
+            setStatusDetail(errStr)
+            setConnectionStatus('AUTH_REQUIRED')
+            throw new Error(errStr)
+          }
+        }
+
         const devId = `motog20-${Date.now().toString(36)}`
         const regRes = await client.sendRequest('managed.registerDevice', {
           deviceId: devId,
           deviceName: 'Motorola Moto G20',
           clientNonce: `cnonce-${Date.now()}`,
-          confirmedFingerprint: hostFp
+          confirmedFingerprint: verifiedFp
         })
         if (!regRes.ok) {
           throw new Error(regRes.error.message || 'REGISTRATION_FAILED')
         }
         const regData = regRes.result as { ok: boolean; credential: MobileDeviceCredential }
         if (regData.ok && regData.credential) {
+          await trustedStore.persistKey(activeHost.id, hostPubKey || verifiedFp)
           await saveStoredCredential(regData.credential, activeHost.id)
           setCredential(regData.credential)
           setConnectionStatus('PENDING_APPROVAL')

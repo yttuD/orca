@@ -159,6 +159,31 @@ export function verifyIndependentFingerprint(
   return computed === cleanRef
 }
 
+export function verifyHostFingerprint(
+  presentedFingerprint: string,
+  independentReference: string,
+  publicKeyB64?: string
+): { ok: boolean; reason?: string } {
+  if (!presentedFingerprint || !presentedFingerprint.trim()) {
+    return { ok: false, reason: 'MISSING_HOST_FINGERPRINT' }
+  }
+  if (!independentReference || !independentReference.trim()) {
+    return { ok: false, reason: 'MISSING_INDEPENDENT_REFERENCE' }
+  }
+  const cleanPresented = presentedFingerprint.trim()
+  const cleanRef = independentReference.trim()
+  if (cleanPresented !== cleanRef) {
+    return { ok: false, reason: 'FINGERPRINT_MISMATCH' }
+  }
+  if (publicKeyB64) {
+    const computed = computeFingerprintFromPublicKey(publicKeyB64)
+    if (computed !== cleanRef) {
+      return { ok: false, reason: 'PUBLIC_KEY_FINGERPRINT_MISMATCH' }
+    }
+  }
+  return { ok: true }
+}
+
 export class SecureTrustedHostStore implements TrustedHostStore {
   private readonly memoryCache = new Map<string, string>()
 
