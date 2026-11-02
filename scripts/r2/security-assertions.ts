@@ -12,16 +12,22 @@ export type SecurityAssertionResult = {
 export async function runPhone06SecurityAssertions(params: {
   baseUrl: string
   authorizedToken: string
+  deviceId?: string
 }): Promise<SecurityAssertionResult[]> {
   const results: SecurityAssertionResult[] = []
+  const devId = params.deviceId ?? 'motog20-lab-device-sec'
 
   // 1. Authorized mobile token CAN perform read-only RPC (managed.listProjects)
   try {
+    const now = Math.floor(Date.now() / 1000)
     const res = await fetch(`${params.baseUrl}/api/managed/rpc`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.authorizedToken}`
+        Authorization: `Bearer ${params.authorizedToken}`,
+        'X-Managed-Device-Id': devId,
+        'X-Managed-Nonce': `nonce-sec-read-${Date.now()}`,
+        'X-Managed-Timestamp': String(now)
       },
       body: JSON.stringify({
         request_id: 'req-sec-read-1',
@@ -44,7 +50,10 @@ export async function runPhone06SecurityAssertions(params: {
   // 2. Authorized mobile token CANNOT administer devices (privilege escalation blocked -> HTTP 401)
   try {
     const res = await fetch(`${params.baseUrl}/api/managed/mobile/devices`, {
-      headers: { Authorization: `Bearer ${params.authorizedToken}` }
+      headers: {
+        Authorization: `Bearer ${params.authorizedToken}`,
+        'X-Managed-Device-Id': devId
+      }
     })
     results.push({
       name: 'PHONE-06:AUTH_TOKEN_CANNOT_ADMIN_DEVICES',
@@ -65,7 +74,8 @@ export async function runPhone06SecurityAssertions(params: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.authorizedToken}`
+        Authorization: `Bearer ${params.authorizedToken}`,
+        'X-Managed-Device-Id': devId
       },
       body: JSON.stringify({ device_id: 'dev-spoofed' })
     })
@@ -88,7 +98,10 @@ export async function runPhone06SecurityAssertions(params: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer mdt_invalid_unauthorized_token_hex'
+        Authorization: 'Bearer mdt_invalid_unauthorized_token_hex',
+        'X-Managed-Device-Id': devId,
+        'X-Managed-Nonce': `nonce-sec-bad-${Date.now()}`,
+        'X-Managed-Timestamp': String(Math.floor(Date.now() / 1000))
       },
       body: JSON.stringify({
         request_id: 'req-sec-bad-token',

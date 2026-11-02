@@ -5,10 +5,10 @@
  * legitimate authorized mobile credential testing in PHONE-06,
  * reconnection while still authorized in PHONE-07, and <300 lines ratchet.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import type { ChildProcess } from 'node:child_process'
 import { OrcaRuntimeService } from '../src/main/runtime/orca-runtime'
 import { OrcaRuntimeRpcServer } from '../src/main/runtime/runtime-rpc'
 import { makeStore } from '../src/main/runtime/runtime-rpc-worktree-store-fixtures'
@@ -25,6 +25,12 @@ import {
 import { executeWindowsOperatorApproval } from './r2/windows-operator-panel'
 import { runPhone06SecurityAssertions } from './r2/security-assertions'
 import { runPhone07RecoveryAssertions } from './r2/recovery-assertions'
+import {
+  unlockOperatorSession,
+  getAuthorizedDevice,
+  createAuthorizedLabToken
+} from './r2/operator-setup'
+import { spawnEngine } from './r2/engine-spawner'
 
 const PYTHON_PORT = 8765
 const ORCA_RPC_PORT = 6789
@@ -35,8 +41,6 @@ const ARTIFACTS_DIR =
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 async function openManagedCenter(fingerprint: string): Promise<void> {
-  execAdb(['shell', 'am', 'force-stop', 'com.stably.orca.mobile'])
-  await wait(1500)
   execAdb([
     'shell',
     'am',
@@ -62,64 +66,11 @@ async function runPhysicalValidationR3(): Promise<void> {
     recordProcess = startScreenRecording()
 
     console.log('[1/7] Spawning authentic Python FastAPI engine...')
-    pyProcess = spawn('python', ['scripts/start_e2e_engine.py', '--port', String(PYTHON_PORT)], {
-      cwd: REPO_ENGINE,
-      stdio: ['pipe', 'pipe', 'inherit'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' }
-    })
-
-    let opToken = '',
-      dataDir = '',
-      activeProfFile = '',
-      brTokenFile = ''
-    await new Promise<void>((res, rej) => {
-      pyProcess?.stdout?.on('data', (chunk: Buffer) => {
-        for (const line of chunk.toString().split('\n')) {
-          if (line.startsWith('ENGINE_READY:')) {
-            const p = line.trim().split(':')
-            opToken = p[3]
-            dataDir = p[4]
-            activeProfFile = p[5]
-            brTokenFile = p[6]
-            res()
-          }
-        }
-      })
-      pyProcess?.on('error', rej)
-      pyProcess?.on('exit', (c) => {
-        if (c !== 0) {
-          rej(new Error(`Python exited with code ${c}`))
-        }
-      })
-    })
-
-    tempDirs.push(dataDir)
-    Object.assign(process.env, {
-      MANAGED_PORT: String(PYTHON_PORT),
-      MANAGED_ACTIVE_PROFILE_PATH: activeProfFile,
-      MANAGED_BRIDGE_TOKEN_PATH: brTokenFile,
-      MANAGED_PROFILE: 'NORMAL'
-    })
-
-    for (let i = 0; i < 40; i++) {
-      try {
-        const ping = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/csrf-token`)
-        if (ping.ok) {
-          break
-        }
-      } catch {
-        await wait(150)
-      }
-    }
-
-    const hostIdentRes = await fetch(
-      `http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/host-identity`
-    )
-    const hostIdent = (await hostIdentRes.json()) as {
-      host_fingerprint: string
-      host_public_key: string
-    }
-    const expectedFingerprint = hostIdent.host_fingerprint
+    const engine = await spawnEngine(PYTHON_PORT, REPO_ENGINE)
+    pyProcess = engine.process
+    tempDirs.push(engine.dataDir)
+    const opToken = engine.opToken
+    const expectedFingerprint = engine.expectedFingerprint
     console.log(`[Host Identity] Fingerprint=${expectedFingerprint}`)
 
     console.log('[2/7] Starting Orca Desktop Runtime RPC Server (Laboratory fixture)...')
@@ -216,59 +167,17 @@ async function runPhysicalValidationR3(): Promise<void> {
     captureScreen('moto-g20-r3-04-approved-online.png', ARTIFACTS_DIR)
 
     console.log('[PHONE-04] Testing persistence across process kill (am force-stop)...')
+    execAdb(['shell', 'am', 'force-stop', 'com.stably.orca.mobile'])
+    await wait(2000)
     await openManagedCenter(expectedFingerprint)
     await waitForScreenText('ONLINE', 30000)
     await wait(1500)
     captureScreen('moto-g20-r3-05-persisted-online.png', ARTIFACTS_DIR)
 
-    // Authenticate operator session to inspect devices and issue legitimate lab credential
-    const unlockResp = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/auth/unlock`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: opToken })
-    })
-    const sessionCookie =
-      /orchestrator_session=([^;]+)/.exec(unlockResp.headers.get('set-cookie') ?? '')?.[0] ?? ''
-    const csrfToken = ((await unlockResp.json()) as { csrf_token: string }).csrf_token
-
-    const devListRes = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/devices`, {
-      headers: { Cookie: sessionCookie }
-    })
-    const devList = (await devListRes.json()) as {
-      devices: { device_id: string; status: string }[]
-    }
-    const authorizedDev = devList.devices.find((d) => d.status === 'AUTHORIZED')
-    if (!authorizedDev) {
-      throw new Error('Authorized device not found')
-    }
-
-    // Register and approve a legitimate lab credential for privilege testing
-    const offerRes = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/offer`, {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': csrfToken, Cookie: sessionCookie }
-    })
-    const offerData = (await offerRes.json()) as { offer: { offer_id: string } }
-    const regRes = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offer_id: offerData.offer.offer_id,
-        device_id: 'motog20-lab-device-sec',
-        device_name: 'Motorola Moto G20 (Lab Auth)',
-        client_nonce: `cnonce-${Date.now()}-sec-1234`
-      })
-    })
-    const regJson = (await regRes.json()) as { device: { token: string } }
-    const authorizedLabToken = regJson.device.token
-    await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/approve`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': csrfToken,
-        Cookie: sessionCookie
-      },
-      body: JSON.stringify({ device_id: 'motog20-lab-device-sec' })
-    })
+    // Authenticate operator session and prepare legitimate lab credential
+    const session = await unlockOperatorSession(PYTHON_PORT, opToken)
+    const authorizedDev = await getAuthorizedDevice(PYTHON_PORT, session)
+    const authorizedLabToken = await createAuthorizedLabToken(PYTHON_PORT, session)
 
     console.log('[PHONE-07] Running recovery assertions on STILL-AUTHORIZED device...')
     const p7Results = await runPhone07RecoveryAssertions({
@@ -277,12 +186,12 @@ async function runPhysicalValidationR3(): Promise<void> {
       authorizedToken: authorizedLabToken,
       deviceCountCheck: async () => {
         const res = await fetch(`http://127.0.0.1:${PYTHON_PORT}/api/managed/mobile/devices`, {
-          headers: { Cookie: sessionCookie }
+          headers: { Cookie: session.sessionCookie }
         })
         const data = (await res.json()) as { devices: unknown[] }
         return data.devices.length
       },
-      initialCount: devList.devices.length + 1,
+      initialCount: 2,
       waitForOnlineScreen: async (timeoutMs: number) => {
         await waitForScreenText('ONLINE', timeoutMs)
       }
@@ -313,8 +222,8 @@ async function runPhysicalValidationR3(): Promise<void> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-CSRF-Token': csrfToken,
-        Cookie: sessionCookie
+        'X-CSRF-Token': session.csrfToken,
+        Cookie: session.sessionCookie
       },
       body: JSON.stringify({ device_id: authorizedDev.device_id })
     })

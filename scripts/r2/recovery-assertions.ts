@@ -5,11 +5,13 @@ export async function runPhone07RecoveryAssertions(params: {
   port: number
   baseUrl: string
   authorizedToken: string
+  deviceId?: string
   deviceCountCheck: () => Promise<number>
   initialCount: number
   waitForOnlineScreen: (timeoutMs: number) => Promise<void>
 }): Promise<SecurityAssertionResult[]> {
   const results: SecurityAssertionResult[] = []
+  const devId = params.deviceId ?? 'motog20-lab-device-sec'
 
   // 1. Verify initial authenticated state is ONLINE before disruption
   try {
@@ -17,7 +19,10 @@ export async function runPhone07RecoveryAssertions(params: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.authorizedToken}`
+        Authorization: `Bearer ${params.authorizedToken}`,
+        'X-Managed-Device-Id': devId,
+        'X-Managed-Nonce': `nonce-rec-probe-${Date.now()}-1`,
+        'X-Managed-Timestamp': String(Math.floor(Date.now() / 1000))
       },
       body: JSON.stringify({
         request_id: 'req-rec-probe-1',
@@ -27,10 +32,11 @@ export async function runPhone07RecoveryAssertions(params: {
         params: {}
       })
     })
+    const data = (await res.json()) as { ok?: boolean }
     results.push({
       name: 'PHONE-07:INITIAL_ONLINE_CONFIRMED',
-      pass: res.status === 200,
-      detail: `Status=${res.status}`
+      pass: res.status === 200 && data.ok === true,
+      detail: `Status=${res.status}, ok=${data.ok}`
     })
   } catch (err) {
     results.push({ name: 'PHONE-07:INITIAL_ONLINE_CONFIRMED', pass: false, detail: String(err) })
@@ -80,7 +86,10 @@ export async function runPhone07RecoveryAssertions(params: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.authorizedToken}`
+        Authorization: `Bearer ${params.authorizedToken}`,
+        'X-Managed-Device-Id': devId,
+        'X-Managed-Nonce': `nonce-rec-probe-${Date.now()}-2`,
+        'X-Managed-Timestamp': String(Math.floor(Date.now() / 1000))
       },
       body: JSON.stringify({
         request_id: 'req-rec-probe-2',
@@ -90,10 +99,11 @@ export async function runPhone07RecoveryAssertions(params: {
         params: {}
       })
     })
+    const data = (await res.json()) as { ok?: boolean }
     results.push({
       name: 'PHONE-07:RECONNECTED_AUTH_VALID',
-      pass: res.status === 200,
-      detail: `Status=${res.status}`
+      pass: res.status === 200 && data.ok === true,
+      detail: `Status=${res.status}, ok=${data.ok}`
     })
   } catch (err) {
     results.push({ name: 'PHONE-07:RECONNECTED_AUTH_VALID', pass: false, detail: String(err) })
