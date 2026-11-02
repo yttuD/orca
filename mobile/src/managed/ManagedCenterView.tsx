@@ -293,8 +293,8 @@ export function ManagedCenterView({
                 Comprobaciones ({evidence.checks_summary.passed}/{evidence.checks_summary.total}{' '}
                 PASS)
               </Text>
-              {evidence.checks.map((c, i) => (
-                <View key={i} style={styles.checkRow}>
+              {evidence.checks.map((c) => (
+                <View key={c.name} style={styles.checkRow}>
                   <Text style={styles.checkName}>{c.name}</Text>
                   <Text
                     style={[
