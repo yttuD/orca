@@ -5,6 +5,7 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   StyleSheet: { create: vi.fn((s) => s) }
 }))
+vi.mock('expo-crypto', () => ({ getRandomBytes: (l: number) => new Uint8Array(l) }))
 const secureStoreMock = new Map<string, string>()
 vi.mock('expo-secure-store', () => ({
   getItemAsync: vi.fn(async (k: string) => secureStoreMock.get(k) ?? null),

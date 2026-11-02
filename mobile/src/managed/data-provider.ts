@@ -12,8 +12,14 @@ import {
   SYNTHETIC_MANAGED_EVIDENCE
 } from './fixtures'
 import type { RpcClient } from '../transport/rpc-client'
+import * as ExpoCrypto from 'expo-crypto'
 
 function generateCsprngHex(byteLength = 16): string {
+  const cryptoModule = ExpoCrypto as { getRandomBytes?: (n: number) => Uint8Array }
+  if (typeof cryptoModule?.getRandomBytes === 'function') {
+    const bytes = cryptoModule.getRandomBytes(byteLength)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  }
   if (typeof globalThis.crypto?.getRandomValues === 'function') {
     const bytes = new Uint8Array(byteLength)
     globalThis.crypto.getRandomValues(bytes)
@@ -41,7 +47,8 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     if (Date.now() > this.credential.expiresAt) {
       return 'AUTH_REQUIRED'
     }
-    const state = this.rpcClient.getState()
+    const rawState = this.rpcClient.getState() as unknown
+    const state = typeof rawState === 'string' ? rawState : (rawState as { kind?: string })?.kind
     if (state !== 'connected') {
       this.authenticated = false
       return state === 'connecting' ? 'CONNECTING' : 'OFFLINE'
@@ -123,7 +130,8 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       this.authenticated = false
       return 'AUTH_REQUIRED'
     }
-    const state = this.rpcClient.getState()
+    const rawState = this.rpcClient.getState() as unknown
+    const state = typeof rawState === 'string' ? rawState : (rawState as { kind?: string })?.kind
     if (state !== 'connected') {
       this.authenticated = false
       return state === 'connecting' ? 'CONNECTING' : 'OFFLINE'
@@ -275,16 +283,13 @@ export class MockManagedDataProvider implements ManagedDataProvider {
   async listProjects(): Promise<readonly ManagedProjectDTO[]> {
     return SYNTHETIC_MANAGED_PROJECTS
   }
-
-  async listTasks(projectId: string): Promise<readonly ManagedTaskDTO[]> {
-    return SYNTHETIC_MANAGED_TASKS[projectId] ?? []
+  async listTasks(id: string): Promise<readonly ManagedTaskDTO[]> {
+    return SYNTHETIC_MANAGED_TASKS[id] ?? []
   }
-
-  async getEvidence(projectId: string, taskId: string): Promise<ManagedEvidenceDTO | null> {
-    const ev = SYNTHETIC_MANAGED_EVIDENCE[taskId]
-    return ev && ev.project_id === projectId ? ev : null
+  async getEvidence(p: string, t: string): Promise<ManagedEvidenceDTO | null> {
+    const ev = SYNTHETIC_MANAGED_EVIDENCE[t]
+    return ev && ev.project_id === p ? ev : null
   }
-
   getConnectionStatus(): MobileConnectionStatus {
     return 'ONLINE'
   }

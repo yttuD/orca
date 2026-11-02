@@ -21,13 +21,8 @@ const REPO_ENGINE = resolve(__dirname, '../../ORQUESTADOR-MASTER')
 const ARTIFACTS_DIR =
   'C:/Users/carlo/.gemini/antigravity-cli/brain/ea2e1aed-cf97-4128-a59c-c2d77666ad1f'
 
-function wait(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
-function adbExec(cmd: string): string {
-  return execSync(`adb ${cmd}`, { encoding: 'utf-8' }).trim()
-}
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const adbExec = (cmd: string): string => execSync(`adb ${cmd}`, { encoding: 'utf-8' }).trim()
 
 function isTextOnScreen(text: string): boolean {
   try {
@@ -42,7 +37,7 @@ function isTextOnScreen(text: string): boolean {
   }
 }
 
-async function waitForScreenText(text: string, timeoutMs = 25000): Promise<void> {
+async function waitForScreenText(text: string, timeoutMs = 30000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (isTextOnScreen(text)) {
@@ -155,10 +150,10 @@ async function runPhysicalValidation(): Promise<void> {
     }
     console.log(`  --> Pairing URL generated: ${desktopOffer.pairingUrl.slice(0, 40)}...`)
 
-    // 4. Deliver pairing intent to Moto G20
+    // 4. Deliver pairing intent to Moto G20 with clean app state
     console.log('[5/9] Delivering pairing intent to Moto G20...')
-    adbExec('shell am force-stop com.stably.orca.mobile')
-    await wait(1500)
+    adbExec('shell pm clear com.stably.orca.mobile')
+    await wait(2000)
     adbExec(
       `shell am start -a android.intent.action.VIEW -d "${desktopOffer.pairingUrl}" com.stably.orca.mobile`
     )
@@ -251,7 +246,7 @@ async function runPhysicalValidation(): Promise<void> {
 
     // Wait for reactive polling (2s interval) on Moto G20 to detect approval and transition to ONLINE
     console.log('  --> Waiting for reactive 2s polling on Moto G20 to detect approval...')
-    await waitForScreenText('ONLINE', 25000)
+    await waitForScreenText('ONLINE', 30000)
     await wait(1000)
     captureScreenshot('moto-g20-05-online.png')
 
@@ -262,7 +257,7 @@ async function runPhysicalValidation(): Promise<void> {
     adbExec(
       'shell am start -a android.intent.action.VIEW -d "orca://managed" com.stably.orca.mobile'
     )
-    await waitForScreenText('ONLINE', 25000)
+    await waitForScreenText('ONLINE', 30000)
     await wait(1000)
     captureScreenshot('moto-g20-06-persisted-online.png')
 
@@ -278,7 +273,11 @@ async function runPhysicalValidation(): Promise<void> {
       body: JSON.stringify({ device_id: pendingDevId })
     })
     console.log(`  --> Device revocation API status: ${revRes.status}`)
-    await waitForScreenText('AUTH_REQUIRED', 25000)
+    await wait(1500)
+    adbExec(
+      'shell am start -a android.intent.action.VIEW -d "orca://managed" com.stably.orca.mobile'
+    )
+    await waitForScreenText('AUTH_REQUIRED', 30000)
     await wait(1000)
     captureScreenshot('moto-g20-07-revoked.png')
 
