@@ -146,25 +146,41 @@ async function forwardRpc(
   return (res.data as Record<string, unknown>) ?? {}
 }
 
+const defTask = (name: string) =>
+  defineMethod({
+    name,
+    permission: 'workspace',
+    params: ManagedTaskScopedParamsSchema,
+    handler: (p, ctx) =>
+      forwardRpc(
+        name,
+        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
+        p,
+        ctx
+      )
+  })
+
 export const MANAGED_RPC_METHODS = [
   defineMethod({
     name: 'managed.getHostIdentity',
     permission: 'workspace',
     params: ManagedEmptyParamsSchema,
-    handler: async () => {
+    handler: async (_p, ctx) => {
       const res = await callEngineRest('/api/managed/mobile/host-identity')
       if (!res.ok) {
         throw new Error(String(res.error || 'HOST_IDENTITY_UNAVAILABLE'))
       }
       const d = res.data ?? {}
-      return { ...d, fingerprint: d.fingerprint || d.host_fingerprint }
+      const nativeDesktopHostId =
+        (ctx?.runtime as unknown as { hostId?: string })?.hostId || 'local'
+      return { ...d, nativeDesktopHostId, fingerprint: d.fingerprint || d.host_fingerprint }
     }
   }),
   defineMethod({
     name: 'managed.registerDevice',
     permission: 'workspace',
     params: ManagedRegisterParamsSchema,
-    handler: async (params) => {
+    handler: async (params, ctx) => {
       const offerId = params?.offerId || params?.offer_id
       const deviceId = params?.deviceId || params?.device_id
       const deviceName = params?.deviceName || params?.device_name
@@ -173,10 +189,18 @@ export const MANAGED_RPC_METHODS = [
       if (!deviceId || !deviceName || !clientNonce) {
         throw new Error('MISSING_REGISTRATION_FIELDS')
       }
+      if (!confirmedFp || !confirmedFp.trim()) {
+        throw new Error(
+          'CONFIRMED_FINGERPRINT_REQUIRED: Registration requires verified host fingerprint'
+        )
+      }
       const hostIdRes = await callEngineRest('/api/managed/mobile/host-identity')
+      if (!hostIdRes.ok) {
+        throw new Error('HOST_IDENTITY_UNAVAILABLE')
+      }
       const hostFp = String(hostIdRes.data?.fingerprint || hostIdRes.data?.host_fingerprint || '')
-      if (confirmedFp && hostFp && confirmedFp !== hostFp) {
-        throw new Error('FINGERPRINT_MISMATCH')
+      if (!hostFp || confirmedFp !== hostFp) {
+        throw new Error('HOST_KEY_SUBSTITUTION_REJECTED: Fingerprint mismatch with verified host')
       }
       const regRes = await callEngineRest('/api/managed/mobile/register', {
         method: 'POST',
@@ -191,13 +215,18 @@ export const MANAGED_RPC_METHODS = [
         throw new Error(String(regRes.data?.detail || regRes.error || 'REGISTRATION_FAILED'))
       }
       const regDev = (regRes.data?.device as Record<string, unknown>) || {}
+      const pythonHostId = String(hostIdRes.data?.host_id || 'orca-host')
+      const nativeDesktopHostId =
+        (ctx?.runtime as unknown as { hostId?: string })?.hostId || 'local'
       return {
         ok: true,
         credential: {
           deviceId,
           deviceName,
           deviceToken: String(regDev.token || ''),
-          hostId: String(hostIdRes.data?.host_id || 'orca-host'),
+          hostId: pythonHostId,
+          nativeHostId: nativeDesktopHostId,
+          hostFingerprint: hostFp,
           issuedAt: Date.now(),
           expiresAt:
             typeof regDev.expires_at === 'number'
@@ -255,42 +284,9 @@ export const MANAGED_RPC_METHODS = [
     handler: (p, ctx) =>
       forwardRpc('managed.listTasks', { project_id: p?.project_id || p?.projectId || '' }, p, ctx)
   }),
-  defineMethod({
-    name: 'managed.getExecution',
-    permission: 'workspace',
-    params: ManagedTaskScopedParamsSchema,
-    handler: (p, ctx) =>
-      forwardRpc(
-        'managed.getExecution',
-        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
-        p,
-        ctx
-      )
-  }),
-  defineMethod({
-    name: 'managed.getEvidence',
-    permission: 'workspace',
-    params: ManagedTaskScopedParamsSchema,
-    handler: (p, ctx) =>
-      forwardRpc(
-        'managed.getEvidence',
-        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
-        p,
-        ctx
-      )
-  }),
-  defineMethod({
-    name: 'managed.presentReviewPacket',
-    permission: 'workspace',
-    params: ManagedTaskScopedParamsSchema,
-    handler: (p, ctx) =>
-      forwardRpc(
-        'managed.presentReviewPacket',
-        { project_id: p?.project_id || p?.projectId || '', task_id: p?.task_id || p?.taskId || '' },
-        p,
-        ctx
-      )
-  }),
+  defTask('managed.getExecution'),
+  defTask('managed.getEvidence'),
+  defTask('managed.presentReviewPacket'),
   defineMethod({
     name: 'managed.listActivity',
     permission: 'workspace',

@@ -160,6 +160,22 @@ async function runAuthenticE2eTest(): Promise<void> {
 
     const deviceId = parsedOffer.pairedDeviceId || 'pixel-8-e2e'
 
+    // Negative check: Empty fingerprint is rejected
+    let emptyFpRejected = false
+    try {
+      await client.request('managed.registerDevice', {
+        offerId,
+        deviceId,
+        deviceName: 'Pixel 8 E2E Pro',
+        clientNonce: `cnonce-${Date.now()}`
+      })
+    } catch {
+      emptyFpRejected = true
+    }
+    if (!emptyFpRejected) {
+      throw new Error('Expected CONFIRMED_FINGERPRINT_REQUIRED rejection on missing reference')
+    }
+
     // Negative check: Mismatched fingerprint is rejected
     let mismatchRejected = false
     try {
@@ -190,6 +206,9 @@ async function runAuthenticE2eTest(): Promise<void> {
       throw new Error(`Device registration via RPC failed: ${JSON.stringify(regRes)}`)
     }
     const credential = regRes.credential
+    if (!credential.nativeHostId || !credential.hostId) {
+      throw new Error('Expected bound native and managed host identifiers in credential')
+    }
     await saveStoredCredential(credential)
 
     const provider = new EncryptedRpcManagedDataProvider(client as unknown as RpcClient, credential)

@@ -54,6 +54,12 @@ export function ManagedCenterView({
       setSelectedTaskId('')
       if (connectionStatus === 'PENDING_APPROVAL') {
         setErrorState('Esperando autorización del operador en Windows...')
+      } else if (connectionStatus === 'UNPAIRED') {
+        setErrorState('Dispositivo no registrado en Centro Managed.')
+      } else if (connectionStatus === 'AUTH_REQUIRED') {
+        setErrorState('Autorización requerida: credencial revocada o expirada.')
+      } else if (connectionStatus === 'OFFLINE') {
+        setErrorState('Conexión fuera de línea. Comprueba la red LAN.')
       } else {
         setErrorState(`Conexión no disponible: ${connectionStatus}`)
       }
@@ -223,9 +229,13 @@ export function ManagedCenterView({
           <Text style={styles.alertText}>
             {errorState ?? 'Dispositivo no emparejado o sin autorización activa del host.'}
           </Text>
-          {onPairPress && (
+          {onPairPress && connectionStatus !== 'PENDING_APPROVAL' && (
             <TouchableOpacity style={styles.pairButton} onPress={onPairPress}>
-              <Text style={styles.pairButtonText}>Iniciar Pairing LAN Seguro</Text>
+              <Text style={styles.pairButtonText}>
+                {connectionStatus === 'UNPAIRED'
+                  ? 'Emparejar Centro Managed'
+                  : 'Reconectar / Reintentar'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>

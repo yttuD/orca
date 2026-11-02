@@ -230,8 +230,11 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     offerId?: string
     deviceId: string
     deviceName: string
-    confirmedFingerprint?: string
+    confirmedFingerprint: string
   }): Promise<MobileDeviceCredential> {
+    if (!options.confirmedFingerprint || !options.confirmedFingerprint.trim()) {
+      throw new Error('CONFIRMED_FINGERPRINT_REQUIRED')
+    }
     const clientNonce = `cnonce-${Date.now()}-${generateCsprngHex(8)}`
     const params = {
       offerId: options.offerId,

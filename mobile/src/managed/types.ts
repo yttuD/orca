@@ -116,6 +116,8 @@ export type MobileDeviceCredential = {
   readonly deviceName: string
   readonly deviceToken: string
   readonly hostId: string
+  readonly nativeHostId?: string
+  readonly hostFingerprint?: string
   readonly hostAddress?: string
   readonly issuedAt: number
   readonly expiresAt: number

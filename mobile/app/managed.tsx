@@ -97,14 +97,24 @@ export default function NativeManagedRoute(): React.JSX.Element {
         if (st === 'PENDING_APPROVAL') {
           pollTimer = setInterval(async () => {
             if (!active) {
+              if (pollTimer) {
+                clearInterval(pollTimer)
+              }
               return
             }
             const nextSt = await provider.probeAuthentication()
             if (active) {
               setConnectionStatus(nextSt)
-              if (nextSt === 'ONLINE' && pollTimer) {
-                clearInterval(pollTimer)
-                pollTimer = null
+              if (nextSt !== 'PENDING_APPROVAL') {
+                if (pollTimer) {
+                  clearInterval(pollTimer)
+                  pollTimer = null
+                }
+                if (nextSt === 'ONLINE' && credential) {
+                  const updated = { ...credential, status: 'ONLINE' }
+                  setCredential(updated)
+                  await saveStoredCredential(updated, activeHost.id)
+                }
               }
             }
           }, 2000)
@@ -121,17 +131,56 @@ export default function NativeManagedRoute(): React.JSX.Element {
       active = false
       if (pollTimer) {
         clearInterval(pollTimer)
+        pollTimer = null
       }
     }
   }, [provider, client, state.kind, credential, activeHost])
+
+  const handlePairOrRegister = async () => {
+    if (activeHost && client && state.kind === 'connected') {
+      try {
+        setConnectionStatus('CONNECTING')
+        const hostIdentity = (await client.request('managed.getHostIdentity', {})) as {
+          fingerprint?: string
+          host_fingerprint?: string
+          host_id?: string
+        }
+        const hostFp = hostIdentity?.fingerprint || hostIdentity?.host_fingerprint
+        if (!hostFp) {
+          throw new Error('HOST_IDENTITY_UNAVAILABLE')
+        }
+        const devId = `motog20-${Date.now().toString(36)}`
+        const regRes = (await client.request('managed.registerDevice', {
+          deviceId: devId,
+          deviceName: 'Motorola Moto G20',
+          clientNonce: `cnonce-${Date.now()}`,
+          confirmedFingerprint: hostFp
+        })) as { ok: boolean; credential: MobileDeviceCredential }
+        if (regRes.ok && regRes.credential) {
+          await saveStoredCredential(regRes.credential, activeHost.id)
+          setCredential(regRes.credential)
+          setConnectionStatus('PENDING_APPROVAL')
+        } else {
+          setConnectionStatus('AUTH_REQUIRED')
+        }
+      } catch (err) {
+        console.warn('Managed registration error:', err)
+        setConnectionStatus('AUTH_REQUIRED')
+      }
+    } else {
+      router.push('/pair')
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <ManagedCenterView
         connectionStatus={connectionStatus}
+        deviceName={credential?.deviceName || 'Motorola Moto G20'}
+        deviceId={credential?.deviceId || 'moto-g20'}
         dataProvider={provider}
         onBack={() => router.back()}
-        onPairPress={() => router.push('/pair')}
+        onPairPress={() => void handlePairOrRegister()}
       />
     </SafeAreaView>
   )

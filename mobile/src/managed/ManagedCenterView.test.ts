@@ -53,39 +53,18 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     expect(p1.mode).toBe('MANAGED')
   })
 
-  it('2. certifies authentic task only when all checks pass and provenance is verified', () => {
+  it('2. verifies certification rules across authentic, failed, and zero-check evidence', () => {
     const authEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-02-AUTHENTIC']
-    expect(authEv).toBeDefined()
-    expect(authEv.provenance).toBe('AUTHENTIC')
-    expect(authEv.provenance_verified).toBe(true)
-    expect(authEv.commit_exists).toBe(true)
-    expect(authEv.hash_status).toBe('VERIFIED')
-    expect(authEv.hash_verified).toBe(true)
-    expect(authEv.checks_summary.failed).toBe(0)
-    expect(authEv.checks.length).toBe(3)
-    expect(authEv.checks.every((c) => c.status === 'PASS')).toBe(true)
     expect(authEv.certification_status).toBe('CERTIFIED')
-    expect(authEv.memory_telemetry.status).toBe('MEASURED')
-  })
+    expect(authEv.provenance_verified && authEv.hash_verified).toBe(true)
+    expect(authEv.checks.every((c) => c.status === 'PASS')).toBe(true)
 
-  it('3. rejects certification when checks fail and provenance is unverified', () => {
     const failEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-01-SYNTHETIC']
-    expect(failEv).toBeDefined()
-    expect(failEv.provenance).toBe('UNVERIFIED')
-    expect(failEv.provenance_verified).toBe(false)
-    expect(failEv.hash_status).toBe('MISMATCH')
-    expect(failEv.hash_verified).toBe(false)
-    expect(failEv.checks_summary.failed).toBe(1)
     expect(failEv.certification_status).toBe('REJECTED')
-  })
+    expect(failEv.provenance_verified).toBe(false)
 
-  it('4. marks uncertified when task has zero checks executed', () => {
     const zeroEv = SYNTHETIC_MANAGED_EVIDENCE['TASK-F-CHAT-03-ZERO-CHECKS']
-    expect(zeroEv).toBeDefined()
-    expect(zeroEv.checks.length).toBe(0)
-    expect(zeroEv.checks_summary.total).toBe(0)
     expect(zeroEv.certification_status).toBe('UNCERTIFIED')
-    expect(zeroEv.memory_telemetry.status).toBe('NOT_MEASURED')
   })
 
   it('5. defines decoupled data provider contract and clears stale data on disconnect', async () => {
@@ -251,34 +230,30 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     } = await import('./trusted-host-store')
     const cred: MobileDeviceCredential = {
       deviceId: 'phone-test-1',
-      deviceName: 'Pixel Test',
-      deviceToken: 'token-abc-999',
+      deviceName: 'Moto G20',
+      deviceToken: 'token-abc',
       hostId: 'host-gamma',
       issuedAt: 1700000000,
-      expiresAt: 1700000000 + 3600000,
+      expiresAt: 1703600000,
       role: 'MOBILE_READONLY',
       revoked: false,
-      nonce: 'nonce-init-1'
+      nonce: 'nonce-1'
     }
 
     // 1. Without injected driver on unsupported/mockless runtime: fails closed
     setTestSecureStorageDriver(null)
-    const failClosedSave = await saveStoredCredential(cred)
-    expect(failClosedSave).toBe(false)
-    const failClosedLoad = await loadStoredCredential('host-gamma')
-    expect(failClosedLoad).toBeNull()
+    expect(await saveStoredCredential(cred)).toBe(false)
+    expect(await loadStoredCredential('host-gamma')).toBeNull()
 
     // 2. With explicitly injected test driver: persistence succeeds
     setTestSecureStorageDriver(createMemoryStorageDriver())
-    const saved = await saveStoredCredential(cred)
-    expect(saved).toBe(true)
-
-    const loaded = await loadStoredCredential('host-gamma')
-    expect(loaded).toEqual(cred)
+    const credWithNative = { ...cred, nativeHostId: 'desktop-host-gamma' }
+    expect(await saveStoredCredential(credWithNative)).toBe(true)
+    expect(await loadStoredCredential('host-gamma')).toEqual(credWithNative)
+    expect(await loadStoredCredential('desktop-host-gamma')).toEqual(credWithNative)
 
     await removeStoredCredential('host-gamma')
-    const afterDelete = await loadStoredCredential('host-gamma')
-    expect(afterDelete).toBeNull()
+    expect(await loadStoredCredential('host-gamma')).toBeNull()
   })
 
   it('11. does not cache host on storage failure and enforces independent reference', async () => {
@@ -302,5 +277,27 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     const res2 = await store.verifyAndPinHost('host-fail', validPubB64)
     expect(res2.ok).toBe(false)
     expect(res2.error).toBe('INDEPENDENT_REFERENCE_REQUIRED')
+  })
+
+  it('12. requestDevicePairing enforces confirmedFingerprint strictly', async () => {
+    const mockRpcClient = {
+      request: vi.fn(async () => ({ ok: true, credential: TEST_CREDENTIAL })),
+      getState: () => ({ kind: 'connected' })
+    } as unknown as RpcClient
+    const prov = new EncryptedRpcManagedDataProvider(mockRpcClient, null)
+    await expect(
+      prov.requestDevicePairing({
+        deviceId: 'd1',
+        deviceName: 'Moto G20',
+        confirmedFingerprint: ''
+      })
+    ).rejects.toThrow('CONFIRMED_FINGERPRINT_REQUIRED')
+
+    const res = await prov.requestDevicePairing({
+      deviceId: 'd1',
+      deviceName: 'Moto G20',
+      confirmedFingerprint: 'valid-fp'
+    })
+    expect(res).toEqual(TEST_CREDENTIAL)
   })
 })

@@ -243,12 +243,28 @@ export async function loadStoredCredential(hostId: string): Promise<MobileDevice
   }
 }
 
-export async function saveStoredCredential(credential: MobileDeviceCredential): Promise<boolean> {
-  const key = `${CREDENTIAL_STORAGE_PREFIX}${credential.hostId}`
-  return safeSetItem(key, JSON.stringify(credential))
+export async function saveStoredCredential(
+  credential: MobileDeviceCredential,
+  hostKey?: string
+): Promise<boolean> {
+  const targetKey = hostKey || credential.hostId
+  const primaryKey = `${CREDENTIAL_STORAGE_PREFIX}${targetKey}`
+  const ok = await safeSetItem(primaryKey, JSON.stringify(credential))
+  if (credential.nativeHostId && credential.nativeHostId !== targetKey) {
+    await safeSetItem(
+      `${CREDENTIAL_STORAGE_PREFIX}${credential.nativeHostId}`,
+      JSON.stringify(credential)
+    )
+  }
+  if (credential.hostId && credential.hostId !== targetKey) {
+    await safeSetItem(
+      `${CREDENTIAL_STORAGE_PREFIX}${credential.hostId}`,
+      JSON.stringify(credential)
+    )
+  }
+  return ok
 }
 
 export async function removeStoredCredential(hostId: string): Promise<void> {
-  const key = `${CREDENTIAL_STORAGE_PREFIX}${hostId}`
-  await safeDeleteItem(key)
+  await safeDeleteItem(`${CREDENTIAL_STORAGE_PREFIX}${hostId}`)
 }
