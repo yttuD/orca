@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
 
@@ -10,12 +12,21 @@ export type SpawnedEngine = {
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-export async function spawnEngine(port: number, repoPath: string): Promise<SpawnedEngine> {
-  const pyProcess = spawn('python', ['scripts/start_e2e_engine.py', '--port', String(port)], {
-    cwd: repoPath,
-    stdio: ['pipe', 'pipe', 'inherit'],
-    env: { ...process.env, PYTHONUNBUFFERED: '1' }
-  })
+export async function spawnEngine(
+  port: number,
+  repoPath: string,
+  dataDirOption?: string
+): Promise<SpawnedEngine> {
+  const engineDataDir = dataDirOption || resolve(tmpdir(), 'orca_e2e_engine_r3_data')
+  const pyProcess = spawn(
+    'python',
+    ['scripts/start_e2e_engine.py', '--port', String(port), '--data-dir', engineDataDir],
+    {
+      cwd: repoPath,
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    }
+  )
 
   let opToken = '',
     dataDir = '',

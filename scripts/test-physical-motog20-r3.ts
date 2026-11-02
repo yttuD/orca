@@ -149,13 +149,7 @@ async function runPhysicalValidationR3(): Promise<void> {
     }
     if (!isScreenTextPresent('PENDING_APPROVAL')) {
       execAdb(['shell', 'input', 'tap', '200', '497'])
-      await wait(2000)
-      for (let i = 0; i < 15; i++) {
-        if (isScreenTextPresent('PENDING_APPROVAL')) {
-          break
-        }
-        await wait(1000)
-      }
+      await waitForScreenText('PENDING_APPROVAL', 25000)
     }
     captureScreen('moto-g20-r3-03-pending-approval.png', ARTIFACTS_DIR)
 
