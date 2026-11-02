@@ -1,28 +1,48 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import assert from 'node:assert/strict'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-const PYTHON_RPC_URL = 'http://127.0.0.1:8765/api/managed/rpc'
+const PYTHON_BASE_URL = 'http://127.0.0.1:8765'
+const PYTHON_RPC_URL = `${PYTHON_BASE_URL}/api/managed/rpc`
 
-function resolveBridgeToken() {
-  if (process.env.ORCHESTRATOR_TOKEN) {
-    return process.env.ORCHESTRATOR_TOKEN.trim()
-  }
-  if (process.env.OPERATOR_TOKEN) {
-    return process.env.OPERATOR_TOKEN.trim()
-  }
-  const candidatePaths = [
-    join(process.cwd(), '.operator_token'),
-    resolve(process.cwd(), '../ORQUESTADOR-MASTER/.operator_token'),
-    'D:/Programacion-Cosas/ORQUESTADOR-MASTER/.operator_token',
-    'D:\\Programacion-Cosas\\ORQUESTADOR-MASTER\\.operator_token'
-  ]
-  for (const p of candidatePaths) {
-    try {
-      if (existsSync(p)) {
-        const content = readFileSync(p, 'utf8').trim()
-        if (content) {
-          return content
+function resolveTokenFromPaths(baseNames) {
+  const candidates = []
+  let currentDir = process.cwd()
+  for (let i = 0; i < 4; i++) {
+    const searchDirs = [
+      currentDir,
+      resolve(currentDir, 'workspaces', 'staging'),
+      resolve(currentDir, 'ORQUESTADOR-MASTER'),
+      resolve(currentDir, 'ORQUESTADOR-MASTER', 'workspaces', 'staging'),
+      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador'),
+      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador', 'workspaces', 'staging')
+    ]
+    for (const sDir of searchDirs) {
+      for (const name of baseNames) {
+        const full = resolve(sDir, name)
+        if (existsSync(full)) {
+          try {
+            const stat = statSync(full)
+            candidates.push({ path: full, mtime: stat.mtimeMs })
+          } catch {
+            // ignore
+          }
         }
+      }
+    }
+    const parent = resolve(currentDir, '..')
+    if (parent === currentDir) {
+      break
+    }
+    currentDir = parent
+  }
+
+  candidates.sort((a, b) => b.mtime - a.mtime)
+  for (const c of candidates) {
+    try {
+      const content = readFileSync(c.path, 'utf8').trim()
+      if (content) {
+        return content
       }
     } catch {
       // ignore
@@ -31,17 +51,42 @@ function resolveBridgeToken() {
   return null
 }
 
-async function checkEngine(testName, payload, token = null) {
-  console.log(`\n--- Test: ${testName} ---`)
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 2000)
-
-    const headers = { 'Content-Type': 'application/json' }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+function resolveBridgeToken() {
+  if (process.env.MANAGED_BRIDGE_TOKEN) {
+    return process.env.MANAGED_BRIDGE_TOKEN.trim()
+  }
+  if (process.env.MANAGED_BRIDGE_TOKEN_PATH && existsSync(process.env.MANAGED_BRIDGE_TOKEN_PATH)) {
+    try {
+      const content = readFileSync(process.env.MANAGED_BRIDGE_TOKEN_PATH, 'utf8').trim()
+      if (content) {
+        return content
+      }
+    } catch {
+      // ignore
     }
+  }
 
+  return resolveTokenFromPaths(['.managed_bridge_token', '.managed_bridge_token_staging'])
+}
+
+function resolveOperatorToken() {
+  if (process.env.OPERATOR_TOKEN) {
+    return process.env.OPERATOR_TOKEN.trim()
+  }
+  return resolveTokenFromPaths(['.operator_token', '.operator_token_staging'])
+}
+
+async function checkEngineRpc(testName, payload, token = null) {
+  console.log(`\n[TEST] ${testName}`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3000)
+
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  try {
     const resp = await fetch(PYTHON_RPC_URL, {
       method: 'POST',
       headers,
@@ -50,109 +95,202 @@ async function checkEngine(testName, payload, token = null) {
     }).finally(() => clearTimeout(timeout))
 
     const data = await resp.json()
-    console.log(`HTTP Status: ${resp.status}`)
-    console.log('Response:', JSON.stringify(data, null, 2))
-    return { ok: true, data }
+    return { status: resp.status, data }
   } catch (err) {
-    console.log(`Connection failed: ${err.message}`)
-    return { ok: false, error: 'ENGINE_OFFLINE' }
+    clearTimeout(timeout)
+    throw new Error(`Engine unreachable at ${PYTHON_RPC_URL}: ${err.message}`)
   }
 }
 
 async function run() {
-  console.log('=== Checking Managed Integration (ORCA-02B) ===')
-  const token = resolveBridgeToken()
-  console.log(`Resolved local bridge token: ${token ? 'FOUND (masked)' : 'NONE'}`)
+  console.log('=== Automated Integration Test: Managed Bridge (ORCA-02B-R1) ===')
+  const bridgeToken = resolveBridgeToken()
+  assert.ok(
+    bridgeToken,
+    'Managed bridge token must exist (.managed_bridge_token or MANAGED_BRIDGE_TOKEN)'
+  )
+  console.log('Resolved Managed Bridge Token: FOUND (masked)')
 
-  // 1. Unauthenticated request (must fail with AUTH_REQUIRED if engine is online)
-  const unauthReq = {
-    request_id: 'test-unauth-01',
-    method: 'managed.listProjects',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: false, capabilities: ['VIEW'] },
-    params: {}
-  }
-  const _unauthRes = await checkEngine(
-    'Unauthenticated managed.listProjects (Must be AUTH_REQUIRED)',
-    unauthReq,
+  // 1. Negative: Unauthenticated request must fail closed with AUTH_REQUIRED
+  const unauthRes = await checkEngineRpc(
+    '1. Unauthenticated managed.listProjects (Must fail closed with AUTH_REQUIRED)',
+    {
+      request_id: 'test-unauth-01',
+      method: 'managed.listProjects',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer', authenticated: false, capabilities: ['VIEW'] },
+      params: {}
+    },
     null
   )
+  assert.equal(unauthRes.status, 200)
+  assert.equal(unauthRes.data.ok, false)
+  assert.equal(unauthRes.data.error_code, 'AUTH_REQUIRED')
+  assert.equal(unauthRes.data.effects_applied, false)
+  assert.equal(unauthRes.data.engine_state_unchanged, true)
+  console.log('  -> PASS: Unauthenticated call rejected with AUTH_REQUIRED')
 
-  // 2. Authenticated listProjects
-  const listReq = {
-    request_id: 'test-auth-list-01',
-    method: 'managed.listProjects',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: true, capabilities: ['VIEW'] },
-    params: {}
-  }
-  const listRes = await checkEngine('Authenticated managed.listProjects', listReq, token)
-
-  let firstProjectId = null
-  if (
-    listRes.ok &&
-    listRes.data &&
-    listRes.data.data &&
-    Array.isArray(listRes.data.data.projects) &&
-    listRes.data.data.projects.length > 0
-  ) {
-    firstProjectId = listRes.data.data.projects[0].id
-  }
-
-  // 3. Authenticated listTasks
-  const tasksReq = {
-    request_id: 'test-auth-tasks-01',
-    method: 'managed.listTasks',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: true, capabilities: ['VIEW'] },
-    params: firstProjectId ? { project_id: firstProjectId } : {}
-  }
-  await checkEngine(
-    `Authenticated managed.listTasks (project_id=${firstProjectId || 'all'})`,
-    tasksReq,
-    token
+  // 2. Negative: Bridge token CANNOT unlock operator administration panel
+  console.log('\n[TEST] 2. Separation of Duties: Bridge token cannot unlock operator admin')
+  const adminUnlockResp = await fetch(`${PYTHON_BASE_URL}/api/auth/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: bridgeToken })
+  })
+  assert.equal(
+    adminUnlockResp.status,
+    401,
+    'Expected HTTP 401 Unauthorized when attempting admin unlock with bridge token'
   )
+  console.log('  -> PASS: Operator panel strictly rejected bridge token with HTTP 401')
 
-  // 4. Authenticated getExecution (real task)
-  const realExecReq = {
-    request_id: 'test-auth-exec-real',
-    method: 'managed.getExecution',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: true, capabilities: ['VIEW'] },
-    params: {
-      project_id: 'c0a80101-0000-4000-8000-000000000001',
-      task_id: 'TASK-F-CHAT-01-SYNTHETIC'
-    }
+  // 3. Negative: Operator token CANNOT authenticate Managed bridge
+  const operatorToken = resolveOperatorToken()
+  if (operatorToken) {
+    console.log('\n[TEST] 3. Separation of Duties: Operator token cannot authenticate bridge')
+    const opBridgeRes = await checkEngineRpc(
+      '3. Calling managed.listProjects with operator admin token',
+      {
+        request_id: 'test-op-tok-on-bridge',
+        method: 'managed.listProjects',
+        protocol: { name: 'managed', major: 1, minor: 0 },
+        caller: { surface: 'renderer' },
+        params: {}
+      },
+      operatorToken
+    )
+    assert.equal(opBridgeRes.data.ok, false)
+    assert.equal(opBridgeRes.data.error_code, 'AUTH_REQUIRED')
+    console.log('  -> PASS: Operator token strictly rejected on Managed bridge')
   }
-  await checkEngine('Authenticated managed.getExecution (real task)', realExecReq, token)
 
-  // 4b. Authenticated getExecution (negative test: invalid params if missing)
-  const execReq = {
-    request_id: 'test-auth-exec-01',
-    method: 'managed.getExecution',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: true, capabilities: ['VIEW'] },
-    params: { project_id: firstProjectId || 'fake-proj', task_id: 'fake-task' }
-  }
-  await checkEngine(
-    'Authenticated managed.getExecution (non-existent task returns NOT_FOUND)',
-    execReq,
-    token
+  // 4. Positive: Authenticated listProjects with bridge token
+  const listRes = await checkEngineRpc(
+    '4. Authenticated managed.listProjects with valid bridge token',
+    {
+      request_id: 'test-auth-list-01',
+      method: 'managed.listProjects',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: {}
+    },
+    bridgeToken
   )
+  assert.equal(listRes.status, 200)
+  assert.equal(listRes.data.ok, true)
+  assert.equal(listRes.data.effects_applied, false)
+  assert.equal(listRes.data.engine_state_unchanged, true)
+  const projects = listRes.data.data.projects
+  assert.ok(Array.isArray(projects) && projects.length > 0, 'Expected non-empty projects array')
+  const p0 = projects[0]
+  assert.ok(p0.id && p0.name, 'Project must contain id and name')
+  assert.equal('root_dir' in p0, false, 'Leaked root_dir in project projection')
+  assert.equal('data_dir' in p0, false, 'Leaked data_dir in project projection')
+  assert.equal('operator_token' in p0, false, 'Leaked operator_token in project projection')
+  console.log(`  -> PASS: listProjects returned ${projects.length} projected sanitized project(s)`)
 
-  // 5. Mutation method rejection
-  const mutReq = {
-    request_id: 'test-auth-mut-01',
-    method: 'managed.requestDispatch',
-    protocol: { name: 'managed', major: 1, minor: 0 },
-    caller: { surface: 'renderer', authenticated: true, capabilities: ['VIEW'] },
-    params: {}
-  }
-  await checkEngine(
-    'Authenticated mutation managed.requestDispatch (must be READ_ONLY_WORKSPACE)',
-    mutReq,
-    token
+  const projectId = p0.id
+
+  // 5. Positive: Authenticated listTasks
+  const tasksRes = await checkEngineRpc(
+    `5. Authenticated managed.listTasks for project_id=${projectId}`,
+    {
+      request_id: 'test-auth-tasks-01',
+      method: 'managed.listTasks',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId }
+    },
+    bridgeToken
   )
+  assert.equal(tasksRes.status, 200)
+  assert.equal(tasksRes.data.ok, true)
+  const tasks = tasksRes.data.data.tasks
+  assert.ok(Array.isArray(tasks) && tasks.length > 0, 'Expected non-empty tasks array')
+  const t0 = tasks[0]
+  assert.ok(t0.id && t0.status, 'Task must contain id and status')
+  assert.equal('worktree_dir' in t0, false, 'Leaked worktree_dir in task projection')
+  assert.equal('git_env' in t0, false, 'Leaked git_env in task projection')
+  console.log(`  -> PASS: listTasks returned ${tasks.length} projected sanitized task(s)`)
+
+  const taskId = t0.id
+
+  // 6. Positive: Authenticated getExecution (real task)
+  const execRes = await checkEngineRpc(
+    `6. Authenticated managed.getExecution for task_id=${taskId}`,
+    {
+      request_id: 'test-auth-exec-real',
+      method: 'managed.getExecution',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId, task_id: taskId }
+    },
+    bridgeToken
+  )
+  assert.equal(execRes.status, 200)
+  assert.equal(execRes.data.ok, true)
+  const execution = execRes.data.data.execution
+  assert.equal(execution.task_id, taskId)
+  assert.equal(execution.project_id, projectId)
+  assert.ok(execution.status, 'Execution must contain status')
+  assert.ok('lease_owner' in execution, 'Execution must contain lease_owner')
+  assert.ok('lease_generation' in execution, 'Execution must contain lease_generation')
+  console.log('  -> PASS: getExecution returned valid sanitized execution details')
+
+  // 7. Negative: Cross-project task isolation
+  const crossRes = await checkEngineRpc(
+    '7. Project boundary isolation: query task under mismatched project_id',
+    {
+      request_id: 'test-auth-exec-cross',
+      method: 'managed.getExecution',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: 'c0a80101-0000-4000-8000-NONEXISTENT', task_id: taskId }
+    },
+    bridgeToken
+  )
+  assert.equal(crossRes.data.ok, false)
+  assert.equal(crossRes.data.error_code, 'NOT_FOUND')
+  console.log('  -> PASS: Cross-project task access correctly denied with NOT_FOUND')
+
+  // 8. Negative: Missing parameters for getExecution
+  const missingParamsRes = await checkEngineRpc(
+    '8. Parameter validation: managed.getExecution missing task_id',
+    {
+      request_id: 'test-auth-exec-missing',
+      method: 'managed.getExecution',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer' },
+      params: { project_id: projectId }
+    },
+    bridgeToken
+  )
+  assert.equal(missingParamsRes.data.ok, false)
+  assert.equal(missingParamsRes.data.error_code, 'INVALID_PARAMS')
+  console.log('  -> PASS: Missing parameters correctly rejected with INVALID_PARAMS')
+
+  // 9. Negative: Mutation method rejection
+  const mutRes = await checkEngineRpc(
+    '9. Mutation rejection: managed.requestDispatch in read-only mode',
+    {
+      request_id: 'test-auth-mut-01',
+      method: 'managed.requestDispatch',
+      protocol: { name: 'managed', major: 1, minor: 0 },
+      caller: { surface: 'renderer', capabilities: ['VIEW', 'MUTATE'] },
+      params: {}
+    },
+    bridgeToken
+  )
+  assert.equal(mutRes.data.ok, false)
+  assert.equal(mutRes.data.error_code, 'READ_ONLY_WORKSPACE')
+  assert.equal(mutRes.data.effects_applied, false)
+  assert.equal(mutRes.data.engine_state_unchanged, true)
+  console.log('  -> PASS: Mutation request rejected with READ_ONLY_WORKSPACE')
+
+  console.log('\n=== ALL AUTOMATED INTEGRATION ASSERTIONS PASSED (100% GREEN) ===\n')
 }
 
-run()
+run().catch((err) => {
+  console.error('\nFAILED INTEGRATION TEST:', err.message)
+  process.exit(1)
+})

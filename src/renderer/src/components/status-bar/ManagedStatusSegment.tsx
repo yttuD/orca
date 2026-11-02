@@ -105,17 +105,29 @@ export function ManagedStatusSegment({
       } else if (res.status === 'OFFLINE') {
         setStatus('OFFLINE')
         setProjects([])
+        setTasks([])
+        setExecution(null)
+        setSelectedProjectId(null)
+        setSelectedTaskId(null)
         setErrorCode(res.error_code || 'ENGINE_OFFLINE')
         setErrorMessage(res.error_message || 'Motor Python desconectado')
       } else {
         setStatus('ERROR')
         setProjects([])
+        setTasks([])
+        setExecution(null)
+        setSelectedProjectId(null)
+        setSelectedTaskId(null)
         setErrorCode(res.error_code || 'RPC_ERROR')
         setErrorMessage(res.error_message || 'Error en respuesta RPC')
       }
     } catch (err: unknown) {
       setStatus('OFFLINE')
       setProjects([])
+      setTasks([])
+      setExecution(null)
+      setSelectedProjectId(null)
+      setSelectedTaskId(null)
       setErrorCode('CONN_FAIL')
       setErrorMessage(err instanceof Error ? err.message : 'Fallo de conexión al motor')
     } finally {

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ipcMain } from 'electron'
 
 export type ManagedProjectDTO = {
@@ -62,29 +62,64 @@ export type ManagedExecutionResult = {
 const PYTHON_ENGINE_URL = 'http://127.0.0.1:8765/api/managed/rpc'
 
 /**
- * Resolves the operator bridge token securely from local process environment or disk.
+ * Resolves the dedicated Managed bridge token securely from local process environment or disk.
  * The token is kept strictly in Electron Main and NEVER forwarded to renderer.
+ * All machine-specific absolute paths have been eliminated in favor of standard relative
+ * and environment discovery.
  */
 export function resolveBridgeToken(): string | null {
-  if (process.env.ORCHESTRATOR_TOKEN) {
-    return process.env.ORCHESTRATOR_TOKEN.trim()
+  if (process.env.MANAGED_BRIDGE_TOKEN) {
+    return process.env.MANAGED_BRIDGE_TOKEN.trim()
   }
-  if (process.env.OPERATOR_TOKEN) {
-    return process.env.OPERATOR_TOKEN.trim()
-  }
-  const candidatePaths = [
-    join(process.cwd(), '.operator_token'),
-    resolve(process.cwd(), '../ORQUESTADOR-MASTER/.operator_token'),
-    'D:/Programacion-Cosas/ORQUESTADOR-MASTER/.operator_token',
-    'D:\\Programacion-Cosas\\ORQUESTADOR-MASTER\\.operator_token'
-  ]
-  for (const p of candidatePaths) {
+  if (process.env.MANAGED_BRIDGE_TOKEN_PATH && existsSync(process.env.MANAGED_BRIDGE_TOKEN_PATH)) {
     try {
-      if (existsSync(p)) {
-        const content = readFileSync(p, 'utf8').trim()
-        if (content) {
-          return content
+      const content = readFileSync(process.env.MANAGED_BRIDGE_TOKEN_PATH, 'utf8').trim()
+      if (content) {
+        return content
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const baseNames = ['.managed_bridge_token', '.managed_bridge_token_staging']
+  const candidates: { path: string; mtime: number }[] = []
+  let currentDir = process.cwd()
+  for (let i = 0; i < 4; i++) {
+    const searchDirs = [
+      currentDir,
+      resolve(currentDir, 'workspaces', 'staging'),
+      resolve(currentDir, 'ORQUESTADOR-MASTER'),
+      resolve(currentDir, 'ORQUESTADOR-MASTER', 'workspaces', 'staging'),
+      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador'),
+      resolve(currentDir, 'Chat-AGY-CODEX-Orquestador', 'workspaces', 'staging')
+    ]
+    for (const sDir of searchDirs) {
+      for (const name of baseNames) {
+        const full = resolve(sDir, name)
+        if (existsSync(full)) {
+          try {
+            const stat = statSync(full)
+            candidates.push({ path: full, mtime: stat.mtimeMs })
+          } catch {
+            // ignore
+          }
         }
+      }
+    }
+    const parent = resolve(currentDir, '..')
+    if (parent === currentDir) {
+      break
+    }
+    currentDir = parent
+  }
+
+  candidates.sort((a, b) => b.mtime - a.mtime)
+  for (const c of candidates) {
+    try {
+      const content = readFileSync(c.path, 'utf8').trim()
+      if (content) {
+        return content
       }
     } catch {
       // ignore
