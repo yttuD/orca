@@ -132,6 +132,15 @@ export type PairingOffer = {
   readonly timestamp: number
   readonly expiresAt: number
   readonly nonce: string
+  readonly hostPublicKey?: string
+  readonly hostSignature?: string
+}
+
+export interface ManagedDataProvider {
+  listProjects(): Promise<readonly ManagedProjectDTO[]>
+  listTasks(projectId: string): Promise<readonly ManagedTaskDTO[]>
+  getEvidence(projectId: string, taskId: string): Promise<ManagedEvidenceDTO | null>
+  getConnectionStatus?(): MobileConnectionStatus
 }
 
 export type PairingHandshake = {

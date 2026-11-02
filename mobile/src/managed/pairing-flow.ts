@@ -158,16 +158,45 @@ export function validateMobileRequest(
   return { allowed: true, status: 'ONLINE' }
 }
 
+export function verifyHostProofOfPossession(
+  offer: PairingOffer,
+  verifyFn?: (message: string, signature: string, publicKey: string) => boolean
+): { ok: boolean; error?: string } {
+  if (!offer.hostSignature) {
+    return { ok: false, error: 'MISSING_HOST_SIGNATURE' }
+  }
+  if (!offer.hostPublicKey) {
+    return { ok: false, error: 'MISSING_HOST_PUBLIC_KEY' }
+  }
+  const tsSec = Math.floor(offer.timestamp / 1000)
+  const message = `${offer.offerId}:${offer.nonce}:${tsSec}:${offer.fingerprint}`
+  if (verifyFn) {
+    const valid = verifyFn(message, offer.hostSignature, offer.hostPublicKey)
+    if (!valid) {
+      return { ok: false, error: 'INVALID_HOST_SIGNATURE' }
+    }
+  }
+  return { ok: true }
+}
+
 export function simulateMobilePairingHandshake(
   offer: PairingOffer,
   deviceId: string,
   deviceName: string,
   now = Date.now(),
-  prohibitedTokens: readonly string[] = []
+  prohibitedTokens: readonly string[] = [],
+  verifyFn?: (message: string, signature: string, publicKey: string) => boolean
 ): { ok: boolean; credential?: MobileDeviceCredential; error?: string } {
   const offerCheck = verifyPairingOffer(offer, now)
   if (!offerCheck.ok) {
     return { ok: false, error: offerCheck.error }
+  }
+
+  if (offer.hostSignature || offer.hostPublicKey) {
+    const proofCheck = verifyHostProofOfPossession(offer, verifyFn)
+    if (!proofCheck.ok) {
+      return { ok: false, error: proofCheck.error }
+    }
   }
 
   const handshake: PairingHandshake = {

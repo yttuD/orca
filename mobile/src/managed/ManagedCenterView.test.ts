@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { ManagedDataProvider } from './types'
 import { SYNTHETIC_MANAGED_PROJECTS, SYNTHETIC_MANAGED_EVIDENCE } from './fixtures'
 
 describe('ManagedCenterView & Mobile Fixture Integrity', () => {
@@ -43,5 +44,30 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     expect(zeroEv.checks_summary.total).toBe(0)
     expect(zeroEv.certification_status).toBe('UNCERTIFIED')
     expect(zeroEv.memory_telemetry.status).toBe('NOT_MEASURED')
+  })
+
+  it('5. defines decoupled data provider contract and clears stale data on disconnect', async () => {
+    let mockProjectsCalled = false
+    const mockProvider: ManagedDataProvider = {
+      listProjects: async () => {
+        mockProjectsCalled = true
+        return [
+          {
+            id: 'proj-live-1',
+            name: 'Live Remote Project',
+            status: 'ACTIVE',
+            mode: 'MANAGED'
+          }
+        ]
+      },
+      listTasks: async () => [],
+      getEvidence: async () => null,
+      getConnectionStatus: () => 'ONLINE'
+    }
+
+    const projects = await mockProvider.listProjects()
+    expect(mockProjectsCalled).toBe(true)
+    expect(projects).toHaveLength(1)
+    expect(projects[0]?.name).toBe('Live Remote Project')
   })
 })

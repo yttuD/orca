@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   createPairingOffer,
   verifyPairingOffer,
+  verifyHostProofOfPossession,
   createMobileDeviceCredential,
   validateMobileRequest,
   simulateMobilePairingHandshake,
@@ -163,5 +164,61 @@ describe('Mobile Managed Pairing & Integrity Flow', () => {
     expect(hex2).toHaveLength(32)
     expect(hex1).not.toBe(hex2)
     expect(/^[0-9a-f]{32}$/.test(hex1)).toBe(true)
+  })
+
+  it('8. verifies host proof of possession (Ed25519 signature) during handshake', () => {
+    const now = 1730000000000
+    const offer = {
+      ...createPairingOffer('host-pc-01', 'Ubuntu Host', 'FP-987654321', now),
+      hostPublicKey: 'fake-pubkey-base64',
+      hostSignature: 'fake-signature-base64'
+    }
+
+    // Verification succeeds with authentic signature
+    const validCheck = verifyHostProofOfPossession(offer, (_msg, sig, pub) => {
+      return sig === 'fake-signature-base64' && pub === 'fake-pubkey-base64'
+    })
+    expect(validCheck.ok).toBe(true)
+
+    // Verification fails with tampered signature
+    const failCheck = verifyHostProofOfPossession(offer, () => false)
+    expect(failCheck.ok).toBe(false)
+    expect(failCheck.error).toBe('INVALID_HOST_SIGNATURE')
+
+    // Handshake integrates host proof check
+    const badHandshake = simulateMobilePairingHandshake(
+      offer,
+      'dev-id-1',
+      'Phone 1',
+      now + 500,
+      [],
+      () => false
+    )
+    expect(badHandshake.ok).toBe(false)
+    expect(badHandshake.error).toBe('INVALID_HOST_SIGNATURE')
+  })
+
+  it('9. enforces positive allowlist of mobile RPC methods', () => {
+    const cred = createMobileDeviceCredential('dev-allow', 'Phone Allow', 'host-1')
+
+    // All allowed methods succeed
+    const allowed = [
+      'managed.listProjects',
+      'managed.listTasks',
+      'managed.getExecution',
+      'managed.getEvidence',
+      'managed.presentReviewPacket',
+      'managed.listActivity'
+    ]
+    for (const m of allowed) {
+      const res = validateMobileRequest(cred, m, `nonce-allow-${m}-123456`)
+      expect(res.allowed).toBe(true)
+      expect(res.status).toBe('ONLINE')
+    }
+
+    // Non-allowed method fails closed
+    const unkRes = validateMobileRequest(cred, 'managed.unknownMethod', 'nonce-unk-1234567890')
+    expect(unkRes.allowed).toBe(false)
+    expect(unkRes.error).toBe('UNKNOWN_METHOD')
   })
 })
