@@ -15,15 +15,18 @@ export const FORBIDDEN_MOBILE_METHODS = [
   'admin.shutdown'
 ] as const
 
+export const AUDIT_DISABLED_MOBILE_METHODS = [
+  'managed.requestPause',
+  'managed.requestStop'
+] as const
+
 export const ALLOWED_MOBILE_METHODS = [
   'managed.listProjects',
   'managed.listTasks',
   'managed.getExecution',
   'managed.getEvidence',
   'managed.presentReviewPacket',
-  'managed.listActivity',
-  'managed.requestPause',
-  'managed.requestStop'
+  'managed.listActivity'
 ] as const
 
 const USED_NONCES = new Set<string>()
@@ -33,12 +36,18 @@ export function resetUsedNoncesForTesting(): void {
 }
 
 export function generateCryptoHex(byteLength = 32): string {
-  const chars = '0123456789abcdef'
-  let out = ''
-  for (let i = 0; i < byteLength * 2; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)]
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(byteLength)
+    globalThis.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
   }
-  return out
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeCrypto = require('crypto')
+    return nodeCrypto.randomBytes(byteLength).toString('hex')
+  } catch {
+    throw new Error('No cryptographically secure PRNG available')
+  }
 }
 
 export function createPairingOffer(
@@ -135,6 +144,11 @@ export function validateMobileRequest(
   // Role limitation: Disallow direct mutations, dispatches, and approvals
   if ((FORBIDDEN_MOBILE_METHODS as readonly string[]).includes(method)) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'FORBIDDEN_MUTATION_METHOD' }
+  }
+
+  // Pause and stop remain disabled pending independent audit
+  if ((AUDIT_DISABLED_MOBILE_METHODS as readonly string[]).includes(method)) {
+    return { allowed: false, status: 'AUTH_REQUIRED', error: 'PAUSE_STOP_DISABLED_PENDING_AUDIT' }
   }
 
   if (!(ALLOWED_MOBILE_METHODS as readonly string[]).includes(method)) {

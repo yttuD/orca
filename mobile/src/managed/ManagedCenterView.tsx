@@ -18,15 +18,17 @@ type Props = {
   readonly connectionStatus?: MobileConnectionStatus
   readonly deviceName?: string
   readonly deviceId?: string
+  readonly onBack?: () => void
   readonly onPairPress?: () => void
   readonly onRequestPause?: (taskId: string) => void
   readonly onRequestStop?: (taskId: string) => void
 }
 
 export function ManagedCenterView({
-  connectionStatus = 'ONLINE',
+  connectionStatus = 'UNPAIRED',
   deviceName = 'Pixel 8 Pro (Simulado)',
   deviceId = 'dev-android-8921',
+  onBack,
   onPairPress,
   onRequestPause,
   onRequestStop
@@ -90,13 +92,27 @@ export function ManagedCenterView({
 
   return (
     <ScrollView style={styles.container}>
+      {/* Permanent Synthetic / Demo Fixtures Banner */}
+      <View style={styles.syntheticBanner}>
+        <Text style={styles.syntheticBannerText}>
+          DEMO / DATOS SINTÉTICOS — Modo Simulación Android
+        </Text>
+      </View>
+
       {/* Header bar */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Centro Managed (Android)</Text>
-          <Text style={styles.subtitle}>
-            {deviceName} • {deviceId}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {onBack && (
+            <TouchableOpacity style={styles.backButton} onPress={onBack}>
+              <Text style={styles.backButtonText}>← Volver</Text>
+            </TouchableOpacity>
+          )}
+          <View>
+            <Text style={styles.title}>Centro Managed (Android)</Text>
+            <Text style={styles.subtitle}>
+              {deviceName} • {deviceId}
+            </Text>
+          </View>
         </View>
         <View style={styles.headerRight}>
           {renderStatusPill(connectionStatus)}
@@ -260,19 +276,21 @@ export function ManagedCenterView({
             </View>
           )}
 
-          {/* Action buttons (Requests only) */}
+          {/* Action buttons (Requests disabled pending independent audit) */}
           <View style={styles.actionsRow}>
             <TouchableOpacity
-              style={styles.actionBtnPause}
+              style={[styles.actionBtnPause, styles.actionBtnDisabled]}
+              disabled={true}
               onPress={() => onRequestPause?.(selectedTask.id)}
             >
-              <Text style={styles.actionBtnText}>Solicitar Pausa</Text>
+              <Text style={styles.actionBtnTextDisabled}>Pausa (Auditoría Pendiente)</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.actionBtnStop}
+              style={[styles.actionBtnStop, styles.actionBtnDisabled]}
+              disabled={true}
               onPress={() => onRequestStop?.(selectedTask.id)}
             >
-              <Text style={styles.actionBtnText}>Solicitar Detención</Text>
+              <Text style={styles.actionBtnTextDisabled}>Detención (Auditoría Pendiente)</Text>
             </TouchableOpacity>
           </View>
         </View>

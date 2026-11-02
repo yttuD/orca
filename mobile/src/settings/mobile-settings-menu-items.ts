@@ -2,6 +2,7 @@ import {
   Bell,
   Globe,
   Info,
+  Layers,
   MessageSquare,
   Mic,
   SunMoon,
@@ -24,6 +25,12 @@ export function mobileSettingsMenuItems(push: (route: string) => void): MobileSe
       label: translate('settings.menuItems.terminal', 'Terminal'),
       icon: Terminal,
       onPress: () => push('/terminal-settings')
+    },
+    {
+      id: 'managed',
+      label: translate('settings.menuItems.managed', 'Centro Managed'),
+      icon: Layers,
+      onPress: () => push('/managed')
     },
     {
       id: 'nativeChat',

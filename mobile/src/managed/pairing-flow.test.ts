@@ -5,6 +5,7 @@ import {
   createMobileDeviceCredential,
   validateMobileRequest,
   simulateMobilePairingHandshake,
+  generateCryptoHex,
   resetUsedNoncesForTesting
 } from './pairing-flow'
 
@@ -100,9 +101,14 @@ describe('Mobile Managed Pairing & Integrity Flow', () => {
     const readRes = validateMobileRequest(cred, 'managed.getEvidence', 'nonce-allowed-00000001')
     expect(readRes.allowed).toBe(true)
 
-    // Request pause/stop are allowed
-    const pauseRes = validateMobileRequest(cred, 'managed.requestPause', 'nonce-allowed-00000002')
-    expect(pauseRes.allowed).toBe(true)
+    // Request pause/stop are disabled pending independent audit
+    const pauseRes = validateMobileRequest(cred, 'managed.requestPause', 'nonce-disabled-00000002')
+    expect(pauseRes.allowed).toBe(false)
+    expect(pauseRes.error).toBe('PAUSE_STOP_DISABLED_PENDING_AUDIT')
+
+    const stopRes = validateMobileRequest(cred, 'managed.requestStop', 'nonce-disabled-00000003')
+    expect(stopRes.allowed).toBe(false)
+    expect(stopRes.error).toBe('PAUSE_STOP_DISABLED_PENDING_AUDIT')
 
     // Mutations such as requestDispatch are strictly forbidden
     const dispatchRes = validateMobileRequest(
@@ -148,5 +154,14 @@ describe('Mobile Managed Pairing & Integrity Flow', () => {
     )
     expect(req.allowed).toBe(true)
     expect(req.status).toBe('ONLINE')
+  })
+
+  it('7. uses cryptographically secure generation without Math.random', () => {
+    const hex1 = generateCryptoHex(16)
+    const hex2 = generateCryptoHex(16)
+    expect(hex1).toHaveLength(32)
+    expect(hex2).toHaveLength(32)
+    expect(hex1).not.toBe(hex2)
+    expect(/^[0-9a-f]{32}$/.test(hex1)).toBe(true)
   })
 })
