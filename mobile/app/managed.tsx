@@ -177,13 +177,18 @@ export default function NativeManagedRoute(): React.JSX.Element {
 
         let verifiedPubKey: string
         if (pinnedKey) {
-          if (pinnedKey !== hostPubKey) {
+          const isLegacyFingerprint = pinnedKey.length < 32
+          const keyMatches = isLegacyFingerprint
+            ? computeFingerprintFromPublicKey(hostPubKey) === pinnedKey
+            : pinnedKey === hostPubKey
+
+          if (!keyMatches) {
             const errStr = 'HOST_KEY_SUBSTITUTION_REJECTED: Pinned key mismatch'
             setStatusDetail(errStr)
             setConnectionStatus('AUTH_REQUIRED')
             throw new Error(errStr)
           }
-          verifiedPubKey = pinnedKey
+          verifiedPubKey = hostPubKey
         } else {
           // Require independent out-of-band reference from operator or paired profile
           const independentRef =
