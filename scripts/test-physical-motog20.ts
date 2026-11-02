@@ -28,10 +28,7 @@ function isTextOnScreen(text: string): boolean {
   try {
     adbExec('shell rm -f /sdcard/s_temp.xml')
     const out = adbExec('shell uiautomator dump /sdcard/s_temp.xml')
-    if (!out.includes('dumped to:')) {
-      return false
-    }
-    return adbExec('shell cat /sdcard/s_temp.xml').includes(text)
+    return out.includes('dumped to:') && adbExec('shell cat /sdcard/s_temp.xml').includes(text)
   } catch {
     return false
   }
@@ -53,7 +50,6 @@ function captureScreenshot(filename: string): void {
   adbExec(`shell screencap -p /sdcard/${filename}`)
   adbExec(`pull /sdcard/${filename} ${ARTIFACTS_DIR}/${filename}`)
   adbExec(`shell rm /sdcard/${filename}`)
-  console.log(`  --> Screenshot saved: ${filename}`)
 }
 
 async function runPhysicalValidation(): Promise<void> {

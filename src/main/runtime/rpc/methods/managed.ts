@@ -67,12 +67,6 @@ function extractCallerAuth(
   params: Record<string, unknown> | undefined,
   ctx?: RpcContext
 ): ManagedCallerAuth | undefined {
-  console.log(
-    '[DEBUG_DESKTOP] extractCallerAuth:',
-    JSON.stringify(params),
-    'ctx:',
-    ctx?.pairedDeviceId
-  )
   const isMobile =
     ctx?.clientKind === 'mobile' ||
     Boolean(params?._auth || params?.deviceId || params?.device_id || ctx?.pairedDeviceId)
@@ -132,11 +126,8 @@ async function forwardRpc(
   params: Record<string, unknown> | undefined,
   ctx?: RpcContext
 ): Promise<Record<string, unknown>> {
-  console.log('[DEBUG_DESKTOP] forwardRpc START:', method)
   const auth = extractCallerAuth(params, ctx)
-  console.log('[DEBUG_DESKTOP] forwardRpc AUTH:', JSON.stringify(auth))
   const res = await callEngineRpc(method, args, auth)
-  console.log('[DEBUG_DESKTOP] forwardRpc RES:', JSON.stringify(res))
   if (!res.ok) {
     const rawMsg = String(res.error_message || res.error_code || res.error || '')
     let detail = rawMsg
@@ -189,10 +180,10 @@ export const MANAGED_RPC_METHODS = [
     permission: 'workspace',
     params: ManagedRegisterParamsSchema,
     handler: async (params, ctx) => {
-      const offerId = params?.offerId || params?.offer_id
-      const deviceId = params?.deviceId || params?.device_id
-      const deviceName = params?.deviceName || params?.device_name
-      const clientNonce = params?.clientNonce || params?.client_nonce
+      const offerId = params?.offerId || params?.offer_id,
+        deviceId = params?.deviceId || params?.device_id
+      const deviceName = params?.deviceName || params?.device_name,
+        clientNonce = params?.clientNonce || params?.client_nonce
       const confirmedFp = params?.confirmedFingerprint || params?.confirmed_fingerprint
       if (!deviceId || !deviceName || !clientNonce) {
         throw new Error('MISSING_REGISTRATION_FIELDS')
