@@ -48,7 +48,7 @@ async function openManagedCenter(fingerprint: string): Promise<void> {
     '-a',
     'android.intent.action.VIEW',
     '-d',
-    `orca://managed?expectedFingerprint=${fingerprint}`,
+    `"${`orca://managed?expectedFingerprint=${fingerprint}`}"`,
     'com.stably.orca.mobile'
   ])
 }
@@ -104,7 +104,7 @@ async function runPhysicalValidationR3(): Promise<void> {
       '-a',
       'android.intent.action.VIEW',
       '-d',
-      desktopOffer.pairingUrl,
+      `"${desktopOffer.pairingUrl}"`,
       'com.stably.orca.mobile'
     ])
     await waitForScreenText('Emparejar', 30000)
