@@ -16,7 +16,11 @@ vi.mock('../../../ipc/managed-resolver', () => ({
   resolveBridgeToken: vi.fn(() => 'mbt_mock')
 }))
 
-function dispatchManaged(method: string, params: unknown = {}): Promise<Record<string, unknown>> {
+function dispatchManaged(
+  method: string,
+  params: unknown = {},
+  ctx: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     const runtime = { getRuntimeId: () => 'test-runtime' }
     const dispatcher = new RpcDispatcher({
@@ -26,7 +30,7 @@ function dispatchManaged(method: string, params: unknown = {}): Promise<Record<s
     void dispatcher.dispatchStreaming(
       { id: 'request-1', authToken: '', method, params },
       (response) => resolve(JSON.parse(response) as Record<string, unknown>),
-      {}
+      ctx
     )
   })
 }
@@ -44,7 +48,11 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     const res = await dispatchManaged('managed.listProjects', {})
     expect(res.ok).toBe(true)
     expect(res.result).toEqual({ projects: mockProjects })
-    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith('managed.listProjects', {})
+    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith(
+      'managed.listProjects',
+      {},
+      undefined
+    )
   })
 
   it('2. lists tasks with project_id parameter normalization', async () => {
@@ -57,9 +65,11 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     const res = await dispatchManaged('managed.listTasks', { projectId: 'proj-1' })
     expect(res.ok).toBe(true)
     expect(res.result).toEqual({ tasks: mockTasks })
-    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith('managed.listTasks', {
-      project_id: 'proj-1'
-    })
+    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith(
+      'managed.listTasks',
+      { project_id: 'proj-1' },
+      undefined
+    )
   })
 
   it('3. retrieves evidence with project_id and task_id parameters', async () => {
@@ -81,13 +91,42 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     })
     expect(res.ok).toBe(true)
     expect(res.result).toEqual({ evidence: mockEvidence })
-    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith('managed.getEvidence', {
-      project_id: 'proj-1',
-      task_id: 'task-1'
-    })
+    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith(
+      'managed.getEvidence',
+      { project_id: 'proj-1', task_id: 'task-1' },
+      undefined
+    )
   })
 
-  it('4. fails closed when engine RPC returns error', async () => {
+  it('4. extracts and forwards mobile caller auth headers', async () => {
+    vi.mocked(managedResolver.callEngineRpc).mockResolvedValueOnce({
+      ok: true,
+      data: { projects: [] }
+    })
+
+    const auth = {
+      deviceId: 'mobile-phone-1',
+      deviceToken: 'tok-abc-123',
+      nonce: 'nonce-req-001',
+      timestamp: 1700000000
+    }
+
+    const res = await dispatchManaged('managed.listProjects', { _auth: auth })
+    expect(res.ok).toBe(true)
+    expect(managedResolver.callEngineRpc).toHaveBeenCalledWith(
+      'managed.listProjects',
+      {},
+      {
+        surface: 'mobile',
+        deviceId: 'mobile-phone-1',
+        deviceToken: 'tok-abc-123',
+        nonce: 'nonce-req-001',
+        timestamp: 1700000000
+      }
+    )
+  })
+
+  it('5. fails closed when engine RPC returns error', async () => {
     vi.mocked(managedResolver.callEngineRpc).mockResolvedValueOnce({
       ok: false,
       error_code: 'ENGINE_OFFLINE',
@@ -99,7 +138,7 @@ describe('Managed RPC Methods on Orca Desktop Main', () => {
     expect(res.error).toBeDefined()
   })
 
-  it('5. contains strictly positive allowlist of 6 methods, zero mutations', () => {
+  it('6. contains strictly positive allowlist of 6 methods, zero mutations', () => {
     const methodNames = MANAGED_RPC_METHODS.map((m) => m.name)
     expect(methodNames).toEqual([
       'managed.listProjects',

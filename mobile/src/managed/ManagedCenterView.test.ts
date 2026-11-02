@@ -6,10 +6,16 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: vi.fn((s) => s) }
 }))
 
+const secureStoreMock = new Map<string, string>()
+
 vi.mock('expo-secure-store', () => ({
-  getItemAsync: vi.fn(async () => null),
-  setItemAsync: vi.fn(async () => {}),
-  deleteItemAsync: vi.fn(async () => {}),
+  getItemAsync: vi.fn(async (k: string) => secureStoreMock.get(k) ?? null),
+  setItemAsync: vi.fn(async (k: string, v: string) => {
+    secureStoreMock.set(k, v)
+  }),
+  deleteItemAsync: vi.fn(async (k: string) => {
+    secureStoreMock.delete(k)
+  }),
   WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked'
 }))
 
@@ -200,6 +206,11 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     const pinRes = await store.verifyAndPinHost('host-alpha', validPubB64, expectedFp)
     expect(pinRes.ok).toBe(true)
 
+    // Initial pinning without independent reference fails closed
+    const noRefRes = await store.verifyAndPinHost('host-beta', validPubB64)
+    expect(noRefRes.ok).toBe(false)
+    expect(noRefRes.error).toBe('INDEPENDENT_REFERENCE_REQUIRED')
+
     // Substitution rejection
     const substPubB64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
     const substRes = await store.verifyAndPinHost('host-alpha', substPubB64)
@@ -217,5 +228,31 @@ describe('ManagedCenterView & Mobile Fixture Integrity', () => {
     expect(projs).toEqual(SYNTHETIC_MANAGED_PROJECTS)
     const tasks = await demo.listTasks('c0a80101-0000-4000-8000-000000000001')
     expect(tasks.length).toBeGreaterThan(0)
+  })
+
+  it('10. persists and retrieves MobileDeviceCredential via SecureStore/AsyncStorage', async () => {
+    const { loadStoredCredential, saveStoredCredential, removeStoredCredential } =
+      await import('./trusted-host-store')
+    const cred: MobileDeviceCredential = {
+      deviceId: 'phone-test-1',
+      deviceName: 'Pixel Test',
+      deviceToken: 'token-abc-999',
+      hostId: 'host-gamma',
+      issuedAt: 1700000000,
+      expiresAt: 1700000000 + 3600000,
+      role: 'MOBILE_READONLY',
+      revoked: false,
+      nonce: 'nonce-init-1'
+    }
+
+    const saved = await saveStoredCredential(cred)
+    expect(saved).toBe(true)
+
+    const loaded = await loadStoredCredential('host-gamma')
+    expect(loaded).toEqual(cred)
+
+    await removeStoredCredential('host-gamma')
+    const afterDelete = await loadStoredCredential('host-gamma')
+    expect(afterDelete).toBeNull()
   })
 })

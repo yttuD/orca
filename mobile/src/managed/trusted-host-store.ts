@@ -4,8 +4,10 @@ import { Platform } from 'react-native'
 import { sha256 } from '@noble/hashes/sha256'
 import { decodeBase64Bytes, encodeBase64Bytes } from '../transport/base64-byte-codec'
 import type { TrustedHostStore } from './pairing-flow'
+import type { MobileDeviceCredential } from './types'
 
 const STORAGE_PREFIX = 'orca.managed.trusted_host.'
+const CREDENTIAL_STORAGE_PREFIX = 'orca.managed.credential.'
 
 function toBase64Url(bytes: Uint8Array): string {
   const b64 = encodeBase64Bytes(bytes)
@@ -59,7 +61,7 @@ export class SecureTrustedHostStore implements TrustedHostStore {
     return val
   }
 
-  async persistKey(hostId: string, publicKey: string): Promise<void> {
+  async persistKey(hostId: string, publicKey: string): Promise<boolean> {
     this.memoryCache.set(hostId, publicKey)
     const key = `${STORAGE_PREFIX}${hostId}`
     try {
@@ -68,8 +70,9 @@ export class SecureTrustedHostStore implements TrustedHostStore {
       } else {
         await SecureStore.setItemAsync(key, publicKey)
       }
+      return true
     } catch {
-      // Keep in-memory cache if persistent write fails
+      return false
     }
   }
 
@@ -93,13 +96,6 @@ export class SecureTrustedHostStore implements TrustedHostStore {
     independentFingerprint?: string,
     allowOverride = false
   ): Promise<{ ok: boolean; error?: string }> {
-    if (independentFingerprint) {
-      const match = verifyIndependentFingerprint(hostPublicKeyB64, independentFingerprint)
-      if (!match) {
-        return { ok: false, error: 'INDEPENDENT_FINGERPRINT_MISMATCH' }
-      }
-    }
-
     const existing = (await this.loadPersistentKey(hostId)) ?? this.getTrustedHostKey(hostId)
     if (existing && existing !== hostPublicKeyB64) {
       if (!allowOverride) {
@@ -107,7 +103,65 @@ export class SecureTrustedHostStore implements TrustedHostStore {
       }
     }
 
-    await this.persistKey(hostId, hostPublicKeyB64)
+    if (independentFingerprint) {
+      const match = verifyIndependentFingerprint(hostPublicKeyB64, independentFingerprint)
+      if (!match) {
+        return { ok: false, error: 'INDEPENDENT_FINGERPRINT_MISMATCH' }
+      }
+    } else if (!existing && !allowOverride) {
+      return { ok: false, error: 'INDEPENDENT_REFERENCE_REQUIRED' }
+    }
+
+    const persisted = await this.persistKey(hostId, hostPublicKeyB64)
+    if (!persisted) {
+      return { ok: false, error: 'STORAGE_PERSISTENCE_FAILED' }
+    }
     return { ok: true }
+  }
+}
+
+export async function loadStoredCredential(hostId: string): Promise<MobileDeviceCredential | null> {
+  const key = `${CREDENTIAL_STORAGE_PREFIX}${hostId}`
+  try {
+    let raw: string | null = null
+    if (Platform.OS === 'web') {
+      raw = await AsyncStorage.getItem(key)
+    } else {
+      raw = await SecureStore.getItemAsync(key)
+    }
+    if (!raw) {
+      return null
+    }
+    return JSON.parse(raw) as MobileDeviceCredential
+  } catch {
+    return null
+  }
+}
+
+export async function saveStoredCredential(credential: MobileDeviceCredential): Promise<boolean> {
+  const key = `${CREDENTIAL_STORAGE_PREFIX}${credential.hostId}`
+  try {
+    const json = JSON.stringify(credential)
+    if (Platform.OS === 'web') {
+      await AsyncStorage.setItem(key, json)
+    } else {
+      await SecureStore.setItemAsync(key, json)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function removeStoredCredential(hostId: string): Promise<void> {
+  const key = `${CREDENTIAL_STORAGE_PREFIX}${hostId}`
+  try {
+    if (Platform.OS === 'web') {
+      await AsyncStorage.removeItem(key)
+    } else {
+      await SecureStore.deleteItemAsync(key)
+    }
+  } catch {
+    // Ignore cleanup error
   }
 }

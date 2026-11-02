@@ -125,19 +125,30 @@ export function resolveBridgeToken(): string | null {
   return resolveProfileAndToken().token
 }
 
+export type ManagedCallerAuth = {
+  surface?: 'renderer' | 'mobile'
+  deviceId?: string
+  deviceToken?: string
+  nonce?: string
+  timestamp?: number
+}
+
 export async function callEngineRpc(
   method: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  callerAuth?: ManagedCallerAuth
 ): Promise<Record<string, unknown>> {
   const config = resolveProfileAndToken()
+  const isMobile = callerAuth?.surface === 'mobile' || Boolean(callerAuth?.deviceId)
   const payload = {
     request_id: `req-orca-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     method,
     protocol: { name: 'managed', major: 1, minor: 0 },
     caller: {
-      surface: 'renderer',
-      authenticated: Boolean(config.token),
-      capabilities: ['VIEW', 'EVIDENCE_READ']
+      surface: isMobile ? 'mobile' : 'renderer',
+      authenticated: Boolean(callerAuth?.deviceToken || config.token),
+      capabilities: ['VIEW', 'EVIDENCE_READ'],
+      deviceId: callerAuth?.deviceId
     },
     params
   }
@@ -146,7 +157,21 @@ export async function callEngineRpc(
     'Content-Type': 'application/json',
     'X-Managed-Profile': config.profile
   }
-  if (config.token) {
+
+  if (isMobile) {
+    if (callerAuth?.deviceToken) {
+      headers['Authorization'] = `Bearer ${callerAuth.deviceToken}`
+    }
+    if (callerAuth?.deviceId) {
+      headers['X-Managed-Device-Id'] = callerAuth.deviceId
+    }
+    if (callerAuth?.nonce) {
+      headers['X-Managed-Nonce'] = callerAuth.nonce
+    }
+    if (callerAuth?.timestamp) {
+      headers['X-Managed-Timestamp'] = String(callerAuth.timestamp)
+    }
+  } else if (config.token) {
     headers['Authorization'] = `Bearer ${config.token}`
   }
 

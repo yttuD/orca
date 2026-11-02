@@ -60,39 +60,69 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     }
   }
 
+  private createAuthPayload(): Record<string, unknown> | undefined {
+    if (!this.credential) {
+      return undefined
+    }
+    return {
+      deviceId: this.credential.deviceId,
+      deviceToken: this.credential.deviceToken,
+      nonce: `req-nonce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: Math.floor(Date.now() / 1000)
+    }
+  }
+
+  private async executeRpc(method: string, params: unknown): Promise<unknown> {
+    const client = this.rpcClient as unknown as {
+      sendRequest?: (
+        m: string,
+        p?: unknown
+      ) => Promise<{ ok: boolean; result?: unknown; error?: { message?: string; code?: string } }>
+      request?: (m: string, p?: unknown) => Promise<unknown>
+    }
+    if (typeof client.sendRequest === 'function') {
+      const resp = await client.sendRequest(method, params)
+      if (!resp.ok) {
+        const err = resp.error ?? {}
+        throw new Error(String(err.message || err.code || 'RPC_FAILED'))
+      }
+      return resp.result
+    }
+    if (typeof client.request === 'function') {
+      return client.request(method, params)
+    }
+    throw new Error('Unsupported RpcClient implementation')
+  }
+
   async probeAuthentication(): Promise<MobileConnectionStatus> {
     if (!this.credential) {
+      this.authenticated = false
       return 'UNPAIRED'
+    }
+    if (this.credential.revoked) {
+      this.authenticated = false
+      return 'AUTH_REQUIRED'
+    }
+    if (Date.now() > this.credential.expiresAt) {
+      this.authenticated = false
+      return 'AUTH_REQUIRED'
     }
     const state = this.rpcClient.getState()
     if (state.kind !== 'connected') {
       this.authenticated = false
       return state.kind === 'connecting' ? 'CONNECTING' : 'OFFLINE'
     }
+
     try {
-      const res = await this.rpcClient.request('managed.listProjects', {})
-      if (res && typeof res === 'object') {
-        this.authenticated = true
-        this.authError = null
-        return 'ONLINE'
-      }
-      this.authenticated = false
-      return 'OFFLINE'
+      const auth = this.createAuthPayload()
+      const params = auth ? { _auth: auth } : {}
+      await this.executeRpc('managed.listProjects', params)
+      this.authenticated = true
+      this.authError = null
+      return 'ONLINE'
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (
-        msg.includes('AUTH_REQUIRED') ||
-        msg.includes('UNAUTHORIZED') ||
-        msg.includes('PENDING') ||
-        msg.includes('INVALID_TOKEN') ||
-        msg.includes('401')
-      ) {
-        this.authenticated = false
-        this.authError = msg
-        return 'AUTH_REQUIRED'
-      }
-      this.authenticated = false
-      return 'OFFLINE'
+      this.handleRpcError(err)
+      return this.getConnectionStatus()
     }
   }
 
@@ -104,8 +134,13 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     if (current === 'OFFLINE') {
       throw new Error('Cannot list projects: connection is OFFLINE')
     }
+    if (current === 'AUTH_REQUIRED') {
+      throw new Error('Cannot list projects: device authentication required')
+    }
     try {
-      const res = await this.rpcClient.request('managed.listProjects', {})
+      const auth = this.createAuthPayload()
+      const params = auth ? { _auth: auth } : {}
+      const res = await this.executeRpc('managed.listProjects', params)
       if (!res || typeof res !== 'object') {
         return []
       }
@@ -127,8 +162,13 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     if (current === 'OFFLINE') {
       throw new Error('Cannot list tasks: connection is OFFLINE')
     }
+    if (current === 'AUTH_REQUIRED') {
+      throw new Error('Cannot list tasks: device authentication required')
+    }
     try {
-      const res = await this.rpcClient.request('managed.listTasks', { projectId })
+      const auth = this.createAuthPayload()
+      const params = { projectId, ...(auth ? { _auth: auth } : {}) }
+      const res = await this.executeRpc('managed.listTasks', params)
       if (!res || typeof res !== 'object') {
         return []
       }
@@ -150,8 +190,13 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
     if (current === 'OFFLINE') {
       throw new Error('Cannot get evidence: connection is OFFLINE')
     }
+    if (current === 'AUTH_REQUIRED') {
+      throw new Error('Cannot get evidence: device authentication required')
+    }
     try {
-      const res = await this.rpcClient.request('managed.getEvidence', { projectId, taskId })
+      const auth = this.createAuthPayload()
+      const params = { projectId, taskId, ...(auth ? { _auth: auth } : {}) }
+      const res = await this.executeRpc('managed.getEvidence', params)
       if (!res || typeof res !== 'object') {
         return null
       }
@@ -172,6 +217,9 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
       msg.includes('UNAUTHORIZED') ||
       msg.includes('PENDING') ||
       msg.includes('INVALID_TOKEN') ||
+      msg.includes('REVOKED') ||
+      msg.includes('REPLAY') ||
+      msg.includes('FORBIDDEN') ||
       msg.includes('401')
     ) {
       this.authenticated = false
@@ -180,11 +228,7 @@ export class EncryptedRpcManagedDataProvider implements ManagedDataProvider {
   }
 }
 
-export class DemoManagedDataProvider implements ManagedDataProvider {
-  getConnectionStatus(): MobileConnectionStatus {
-    return 'ONLINE'
-  }
-
+export class MockManagedDataProvider implements ManagedDataProvider {
   async listProjects(): Promise<readonly ManagedProjectDTO[]> {
     return SYNTHETIC_MANAGED_PROJECTS
   }
@@ -193,7 +237,16 @@ export class DemoManagedDataProvider implements ManagedDataProvider {
     return SYNTHETIC_MANAGED_TASKS[projectId] ?? []
   }
 
-  async getEvidence(_projectId: string, taskId: string): Promise<ManagedEvidenceDTO | null> {
-    return SYNTHETIC_MANAGED_EVIDENCE[taskId] ?? null
+  async getEvidence(projectId: string, taskId: string): Promise<ManagedEvidenceDTO | null> {
+    return (
+      SYNTHETIC_MANAGED_EVIDENCE.find((e) => e.project_id === projectId && e.task_id === taskId) ??
+      null
+    )
+  }
+
+  getConnectionStatus(): MobileConnectionStatus {
+    return 'ONLINE'
   }
 }
+
+export const DemoManagedDataProvider = MockManagedDataProvider
