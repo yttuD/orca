@@ -421,11 +421,31 @@ async function run() {
   // 16. Provenance & Check status fidelity verification
   assert.ok(['AUTHENTIC', 'SYNTHETIC', 'UNVERIFIED'].includes(evidence.provenance))
   assert.ok(['VERIFIED', 'MISMATCH', 'NOT_RUN'].includes(evidence.hash_status))
+  assert.equal(typeof evidence.commit_exists, 'boolean', 'Expected boolean commit_exists')
+  assert.equal(typeof evidence.hash_verified, 'boolean', 'Expected boolean hash_verified')
+  assert.equal(
+    typeof evidence.provenance_verified,
+    'boolean',
+    'Expected boolean provenance_verified'
+  )
+  assert.ok(
+    ['CERTIFIED', 'UNCERTIFIED', 'REJECTED'].includes(evidence.certification_status),
+    'Expected valid certification_status'
+  )
+  assert.ok(
+    evidence.memory_telemetry &&
+      ['MEASURED', 'NOT_MEASURED'].includes(evidence.memory_telemetry.status),
+    'Expected memory_telemetry with MEASURED or NOT_MEASURED status'
+  )
   assert.ok(evidence.checks_summary && typeof evidence.checks_summary.total === 'number')
   assert.ok(['AUTHENTIC', 'SYNTHETIC', 'UNVERIFIED'].includes(packet.provenance))
   assert.ok(['VERIFIED', 'MISMATCH', 'NOT_RUN'].includes(packet.hash_status))
+  assert.ok(
+    ['CERTIFIED', 'UNCERTIFIED', 'REJECTED'].includes(packet.certification_status),
+    'Expected valid packet certification_status'
+  )
   console.log(
-    `  -> PASS: Provenance & integrity certified (provenance=${evidence.provenance}, hash=${evidence.hash_status})`
+    `  -> PASS: Provenance & integrity certified (provenance=${evidence.provenance}, hash=${evidence.hash_status}, cert=${evidence.certification_status}, mem=${evidence.memory_telemetry.status})`
   )
 
   console.log('\n=== ALL AUTOMATED INTEGRATION ASSERTIONS PASSED (100% GREEN) ===\n')
