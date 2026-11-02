@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useState } from 'react'
 import { SafeAreaView, StyleSheet } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { ManagedCenterView } from '../src/managed/ManagedCenterView'
 import { EncryptedRpcManagedDataProvider } from '../src/managed/data-provider'
 import { useHostClient } from '../src/transport/host-client-hooks'
@@ -11,6 +11,7 @@ import type { HostProfile } from '../src/transport/types'
 
 export default function NativeManagedRoute(): React.JSX.Element {
   const router = useRouter()
+  const { hostId } = useLocalSearchParams<{ hostId?: string }>()
   const [activeHost, setActiveHost] = useState<HostProfile | null>(null)
   const [credential, setCredential] = useState<MobileDeviceCredential | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<MobileConnectionStatus>('UNPAIRED')
@@ -24,7 +25,8 @@ export default function NativeManagedRoute(): React.JSX.Element {
           return
         }
         if (hosts.length > 0) {
-          const host = hosts[0]
+          const sorted = [...hosts].sort((a, b) => (b.lastConnected ?? 0) - (a.lastConnected ?? 0))
+          const host = (hostId ? hosts.find((h) => h.id === hostId) : undefined) ?? sorted[0]
           setActiveHost(host)
 
           const cred = await loadStoredCredential(host.id)
