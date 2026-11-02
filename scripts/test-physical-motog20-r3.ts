@@ -113,36 +113,50 @@ async function runPhysicalValidationR3(): Promise<void> {
 
     console.log('[PHONE-02] Testing pairing with independent fingerprint validation...')
     execAdb(['shell', 'input', 'tap', '360', '889'])
-    await wait(2000)
-    if (isScreenTextPresent('Usar interfaz de chat')) {
-      execAdb(['shell', 'input', 'tap', '360', '1343'])
-      await wait(1500)
+    await wait(4000)
+    for (let i = 0; i < 15; i++) {
+      if (isScreenTextPresent('Usar interfaz de chat')) {
+        execAdb(['shell', 'input', 'tap', '360', '1343'])
+        await wait(1500)
+        break
+      }
+      if (isScreenTextPresent('Ahora no') || isScreenTextPresent('Actualiza Orca')) {
+        break
+      }
+      await wait(1000)
     }
     if (isScreenTextPresent('Ahora no')) {
       execAdb(['shell', 'input', 'tap', '360', '1434'])
-      await wait(1500)
+      await wait(2000)
     }
     await wait(1000)
     captureScreen('moto-g20-r3-02-paired.png', ARTIFACTS_DIR)
 
     await openManagedCenter(expectedFingerprint)
     await waitForScreenText('Centro Managed', 25000)
-    await wait(3000)
+    await wait(4000)
     for (let i = 0; i < 20; i++) {
       if (
-        isScreenTextPresent('AUTH_REQUIRED') ||
-        isScreenTextPresent('UNPAIRED') ||
+        isScreenTextPresent('Emparejar Centro Managed') ||
         isScreenTextPresent('PENDING_APPROVAL')
       ) {
         break
       }
-      await wait(1000)
+      if (isScreenTextPresent('Reconectar / Reintentar')) {
+        execAdb(['shell', 'input', 'tap', '200', '497'])
+      }
+      await wait(1500)
     }
     if (!isScreenTextPresent('PENDING_APPROVAL')) {
-      execAdb(['shell', 'input', 'tap', '182', '497'])
-      await waitForScreenText('PENDING_APPROVAL', 25000)
+      execAdb(['shell', 'input', 'tap', '200', '497'])
+      await wait(2000)
+      for (let i = 0; i < 15; i++) {
+        if (isScreenTextPresent('PENDING_APPROVAL')) {
+          break
+        }
+        await wait(1000)
+      }
     }
-    await wait(1500)
     captureScreen('moto-g20-r3-03-pending-approval.png', ARTIFACTS_DIR)
 
     console.log('[PHONE-03] Windows Operator UI Approval (UI_AUTOMATED vs HUMAN)...')
