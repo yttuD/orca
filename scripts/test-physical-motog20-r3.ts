@@ -69,7 +69,6 @@ async function runPhysicalValidationR3(): Promise<void> {
     console.log('[1/7] Spawning authentic Python FastAPI engine...')
     const engine = await spawnEngine(PYTHON_PORT, REPO_ENGINE)
     pyProcess = engine.process
-    tempDirs.push(engine.dataDir)
     const opToken = engine.opToken
     const expectedFingerprint = engine.expectedFingerprint
     console.log(`[Host Identity] Fingerprint=${expectedFingerprint}`)

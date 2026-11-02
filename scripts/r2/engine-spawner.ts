@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
 
@@ -18,6 +19,15 @@ export async function spawnEngine(
   dataDirOption?: string
 ): Promise<SpawnedEngine> {
   const engineDataDir = dataDirOption || resolve(tmpdir(), 'orca_e2e_engine_r3_data')
+  const regPath = resolve(engineDataDir, 'authorized_mobile_devices.json')
+  if (existsSync(regPath)) {
+    try {
+      const data = JSON.parse(readFileSync(regPath, 'utf-8'))
+      data.devices = {}
+      data.nonces = {}
+      writeFileSync(regPath, JSON.stringify(data, null, 2), 'utf-8')
+    } catch {}
+  }
   const pyProcess = spawn(
     'python',
     ['scripts/start_e2e_engine.py', '--port', String(port), '--data-dir', engineDataDir],
