@@ -237,6 +237,8 @@ async function runPhysicalValidationR3(): Promise<void> {
       body: JSON.stringify({ device_id: authorizedDev.device_id })
     })
     await wait(1500)
+    execAdb(['shell', 'am', 'force-stop', 'com.stably.orca.mobile'])
+    await wait(2000)
     await openManagedCenter(expectedFingerprint)
     await waitForScreenText('AUTH_REQUIRED', 30000)
     await wait(1500)
