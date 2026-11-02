@@ -13,12 +13,14 @@ import {
   SYNTHETIC_MANAGED_EVIDENCE
 } from './fixtures'
 import { styles } from './ManagedCenterView.styles'
+import { EvidenceDetailCard } from './EvidenceDetailCard'
 
 type Props = {
   readonly connectionStatus?: MobileConnectionStatus
   readonly deviceName?: string
   readonly deviceId?: string
   readonly dataProvider?: ManagedDataProvider
+  readonly isDemo?: boolean
   readonly onBack?: () => void
   readonly onPairPress?: () => void
   readonly onRequestPause?: (taskId: string) => void
@@ -30,6 +32,7 @@ export function ManagedCenterView({
   deviceName = 'Pixel 8 Pro (Simulado)',
   deviceId = 'dev-android-8921',
   dataProvider,
+  isDemo = false,
   onBack,
   onPairPress,
   onRequestPause,
@@ -43,12 +46,6 @@ export function ManagedCenterView({
   const [errorState, setErrorState] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!dataProvider) {
-      setProjects(SYNTHETIC_MANAGED_PROJECTS)
-      setSelectedProjectId(SYNTHETIC_MANAGED_PROJECTS[0]?.id ?? '')
-      setErrorState(null)
-      return
-    }
     if (connectionStatus !== 'ONLINE') {
       setProjects([])
       setTasks([])
@@ -58,6 +55,20 @@ export function ManagedCenterView({
       setErrorState(`Conexión no disponible: ${connectionStatus}`)
       return
     }
+
+    if (!dataProvider) {
+      if (isDemo) {
+        setProjects(SYNTHETIC_MANAGED_PROJECTS)
+        setSelectedProjectId(SYNTHETIC_MANAGED_PROJECTS[0]?.id ?? '')
+        setErrorState(null)
+      } else {
+        setProjects([])
+        setSelectedProjectId('')
+        setErrorState('Sin proveedor de datos configurado')
+      }
+      return
+    }
+
     let active = true
     dataProvider
       .listProjects()
@@ -83,20 +94,27 @@ export function ManagedCenterView({
     return () => {
       active = false
     }
-  }, [dataProvider, connectionStatus])
+  }, [dataProvider, connectionStatus, isDemo])
 
   useEffect(() => {
-    if (!selectedProjectId) {
+    if (connectionStatus !== 'ONLINE' || !selectedProjectId) {
       setTasks([])
       setSelectedTaskId('')
       return
     }
+
     if (!dataProvider) {
-      const syn = SYNTHETIC_MANAGED_TASKS[selectedProjectId] ?? []
-      setTasks(syn)
-      setSelectedTaskId(syn[0]?.id ?? '')
+      if (isDemo) {
+        const syn = SYNTHETIC_MANAGED_TASKS[selectedProjectId] ?? []
+        setTasks(syn)
+        setSelectedTaskId(syn[0]?.id ?? '')
+      } else {
+        setTasks([])
+        setSelectedTaskId('')
+      }
       return
     }
+
     let active = true
     dataProvider
       .listTasks(selectedProjectId)
@@ -116,17 +134,23 @@ export function ManagedCenterView({
     return () => {
       active = false
     }
-  }, [dataProvider, selectedProjectId])
+  }, [dataProvider, connectionStatus, selectedProjectId, isDemo])
 
   useEffect(() => {
-    if (!selectedTaskId) {
+    if (connectionStatus !== 'ONLINE' || !selectedTaskId) {
       setEvidence(null)
       return
     }
+
     if (!dataProvider) {
-      setEvidence(SYNTHETIC_MANAGED_EVIDENCE[selectedTaskId] ?? null)
+      if (isDemo) {
+        setEvidence(SYNTHETIC_MANAGED_EVIDENCE[selectedTaskId] ?? null)
+      } else {
+        setEvidence(null)
+      }
       return
     }
+
     let active = true
     dataProvider
       .getEvidence(selectedProjectId, selectedTaskId)
@@ -143,10 +167,10 @@ export function ManagedCenterView({
     return () => {
       active = false
     }
-  }, [dataProvider, selectedProjectId, selectedTaskId])
+  }, [dataProvider, connectionStatus, selectedProjectId, selectedTaskId, isDemo])
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId)
-  const isSynthetic = !dataProvider || evidence?.is_synthetic
+  const isSynthetic = isDemo || !dataProvider || evidence?.is_synthetic
 
   const renderPill = (txt: string, ok: boolean, warn: boolean) => (
     <View style={[styles.pill, { backgroundColor: ok ? '#064e3b' : warn ? '#78350f' : '#881337' }]}>
@@ -238,117 +262,12 @@ export function ManagedCenterView({
       </View>
 
       {selectedTask && (
-        <View style={styles.detailCard}>
-          <Text style={styles.detailCardTitle}>Detalle y Verificación</Text>
-          <Text style={styles.detailCardSubtitle}>
-            Tarea: {selectedTask.id} • Intento: {evidence?.attempt_id ?? 'ATT-001'}
-          </Text>
-
-          {evidence && (
-            <View style={styles.badgesRow}>
-              <View style={[styles.badge, styles.badgeAvailable]}>
-                <Text style={styles.badgeText}>{evidence.evidence_status}</Text>
-              </View>
-              <View
-                style={[
-                  styles.badge,
-                  evidence.provenance === 'AUTHENTIC'
-                    ? styles.badgeAuthentic
-                    : evidence.provenance === 'SYNTHETIC'
-                      ? styles.badgeSynthetic
-                      : styles.badgeUnverified
-                ]}
-              >
-                <Text style={styles.badgeText}>{evidence.provenance}</Text>
-              </View>
-              <View
-                style={[
-                  styles.badge,
-                  evidence.hash_status === 'VERIFIED' ? styles.badgeHashOk : styles.badgeHashFail
-                ]}
-              >
-                <Text style={styles.badgeText}>
-                  {evidence.hash_status === 'VERIFIED' ? 'HASH OK' : 'HASH MISMATCH'}
-                </Text>
-              </View>
-              {renderPill(
-                evidence.certification_status,
-                evidence.certification_status === 'CERTIFIED',
-                evidence.certification_status === 'UNCERTIFIED'
-              )}
-            </View>
-          )}
-
-          {evidence && evidence.checks_summary.failed > 0 && (
-            <View style={styles.failureCallout}>
-              <Text style={styles.failureText}>
-                Fallo de verificación: {evidence.checks_summary.failed} prueba(s) reportaron FAIL.
-              </Text>
-            </View>
-          )}
-
-          {evidence && evidence.checks.length > 0 ? (
-            <View style={styles.checksContainer}>
-              <Text style={styles.checksHeader}>
-                Comprobaciones ({evidence.checks_summary.passed}/{evidence.checks_summary.total}{' '}
-                PASS)
-              </Text>
-              {evidence.checks.map((c) => (
-                <View key={c.name} style={styles.checkRow}>
-                  <Text style={styles.checkName}>{c.name}</Text>
-                  <Text
-                    style={[
-                      styles.checkStatus,
-                      c.status === 'PASS'
-                        ? styles.checkPass
-                        : c.status === 'FAIL'
-                          ? styles.checkFail
-                          : styles.checkOther
-                    ]}
-                  >
-                    {c.status}
-                    {c.exit_code !== null && c.exit_code !== undefined ? ` (${c.exit_code})` : ''}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.zeroChecksCallout}>
-              <Text style={styles.zeroChecksText}>
-                Sin comprobaciones registradas (Cero checks ejecutados).
-              </Text>
-            </View>
-          )}
-
-          {evidence && (
-            <View style={styles.telemetryRow}>
-              <Text style={styles.telemetryLabel}>Telemetría de Memoria:</Text>
-              <Text style={styles.telemetryValue}>
-                {evidence.memory_telemetry.status === 'MEASURED' &&
-                evidence.memory_telemetry.peak_rss_bytes
-                  ? `${Math.round(evidence.memory_telemetry.peak_rss_bytes / 1024 / 1024)} MiB (Pico)`
-                  : 'NOT_MEASURED'}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.actionBtnPause, styles.actionBtnDisabled]}
-              disabled={true}
-              onPress={() => onRequestPause?.(selectedTask.id)}
-            >
-              <Text style={styles.actionBtnTextDisabled}>Pausa (Auditoría Pendiente)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtnStop, styles.actionBtnDisabled]}
-              disabled={true}
-              onPress={() => onRequestStop?.(selectedTask.id)}
-            >
-              <Text style={styles.actionBtnTextDisabled}>Detención (Auditoría Pendiente)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <EvidenceDetailCard
+          selectedTask={selectedTask}
+          evidence={evidence}
+          onRequestPause={onRequestPause}
+          onRequestStop={onRequestStop}
+        />
       )}
     </ScrollView>
   )

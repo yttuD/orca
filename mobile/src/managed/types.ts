@@ -160,3 +160,27 @@ export type MobileConnectionStatus =
   | 'UNVERIFIED'
   | 'EXPIRED'
   | 'REVOKED'
+
+export const FORBIDDEN_MOBILE_METHODS = [
+  'managed.requestDispatch',
+  'managed.approveVerdict',
+  'managed.rejectVerdict',
+  'operator.createProject',
+  'operator.deleteProject',
+  'operator.publishBridgeEvent',
+  'admin.shutdown'
+] as const
+
+export const AUDIT_DISABLED_MOBILE_METHODS = [
+  'managed.requestPause',
+  'managed.requestStop'
+] as const
+
+export const ALLOWED_MOBILE_METHODS = [
+  'managed.listProjects',
+  'managed.listTasks',
+  'managed.getExecution',
+  'managed.getEvidence',
+  'managed.presentReviewPacket',
+  'managed.listActivity'
+] as const

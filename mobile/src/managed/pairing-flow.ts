@@ -1,33 +1,17 @@
-import type {
-  MobileDeviceCredential,
-  PairingOffer,
-  PairingHandshake,
-  MobileConnectionStatus
+import nacl from 'tweetnacl'
+import { sha256 } from '@noble/hashes/sha256'
+import { decodeBase64Bytes, encodeBase64Bytes } from '../transport/base64-byte-codec'
+import {
+  type MobileDeviceCredential,
+  type PairingOffer,
+  type PairingHandshake,
+  type MobileConnectionStatus,
+  FORBIDDEN_MOBILE_METHODS,
+  AUDIT_DISABLED_MOBILE_METHODS,
+  ALLOWED_MOBILE_METHODS
 } from './types'
 
-export const FORBIDDEN_MOBILE_METHODS = [
-  'managed.requestDispatch',
-  'managed.approveVerdict',
-  'managed.rejectVerdict',
-  'operator.createProject',
-  'operator.deleteProject',
-  'operator.publishBridgeEvent',
-  'admin.shutdown'
-] as const
-
-export const AUDIT_DISABLED_MOBILE_METHODS = [
-  'managed.requestPause',
-  'managed.requestStop'
-] as const
-
-export const ALLOWED_MOBILE_METHODS = [
-  'managed.listProjects',
-  'managed.listTasks',
-  'managed.getExecution',
-  'managed.getEvidence',
-  'managed.presentReviewPacket',
-  'managed.listActivity'
-] as const
+export { FORBIDDEN_MOBILE_METHODS, AUDIT_DISABLED_MOBILE_METHODS, ALLOWED_MOBILE_METHODS }
 
 const USED_NONCES = new Set<string>()
 
@@ -50,12 +34,32 @@ export function generateCryptoHex(byteLength = 32): string {
   }
 }
 
+export interface TrustedHostStore {
+  getTrustedHostKey(hostId: string): string | null
+  setTrustedHostKey(hostId: string, publicKey: string): void
+}
+
+export class InMemoryTrustedHostStore implements TrustedHostStore {
+  private readonly store = new Map<string, string>()
+  getTrustedHostKey(hostId: string): string | null {
+    return this.store.get(hostId) ?? null
+  }
+  setTrustedHostKey(hostId: string, publicKey: string): void {
+    this.store.set(hostId, publicKey)
+  }
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  const b64 = encodeBase64Bytes(bytes)
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 export function createPairingOffer(
   hostId: string,
   hostName: string,
   fingerprint: string,
   now = Date.now(),
-  ttlMs = 300000 // 5 minutes validity
+  ttlMs = 300000
 ): PairingOffer {
   return {
     offerId: `offer-${generateCryptoHex(8)}`,
@@ -65,6 +69,40 @@ export function createPairingOffer(
     timestamp: now,
     expiresAt: now + ttlMs,
     nonce: `nonce-${generateCryptoHex(16)}`
+  }
+}
+
+export function normalizePairingOffer(raw: Record<string, unknown>): PairingOffer {
+  const offerId = String(raw.offerId || raw.offer_id || '')
+  const hostId = String(raw.hostId || raw.host_id || '')
+  const hostName = String(raw.hostName || raw.host_name || hostId || 'Orca Desktop')
+  const fingerprint = String(raw.fingerprint || raw.host_fingerprint || '')
+  const rawTs = Number(raw.timestamp ?? raw.issued_at ?? Date.now())
+  const timestamp = rawTs < 10000000000 ? Math.floor(rawTs * 1000) : Math.floor(rawTs)
+  const rawExp = Number(raw.expiresAt ?? raw.expires_at ?? timestamp + 300000)
+  const expiresAt = rawExp < 10000000000 ? Math.floor(rawExp * 1000) : Math.floor(rawExp)
+  const nonce = String(raw.nonce || '')
+  const hostPublicKey = raw.hostPublicKey
+    ? String(raw.hostPublicKey)
+    : raw.host_public_key
+      ? String(raw.host_public_key)
+      : undefined
+  const hostSignature = raw.hostSignature
+    ? String(raw.hostSignature)
+    : raw.host_signature
+      ? String(raw.host_signature)
+      : undefined
+
+  return {
+    offerId,
+    hostId,
+    hostName,
+    fingerprint,
+    timestamp,
+    expiresAt,
+    nonce,
+    hostPublicKey,
+    hostSignature
   }
 }
 
@@ -81,6 +119,57 @@ export function verifyPairingOffer(
   if (!offer.nonce || offer.nonce.length < 16) {
     return { ok: false, error: 'INVALID_NONCE' }
   }
+  return { ok: true }
+}
+
+export function verifyHostProofOfPossession(
+  offer: PairingOffer,
+  trustedHostStore?: TrustedHostStore
+): { ok: boolean; error?: string } {
+  if (!offer.hostSignature) {
+    return { ok: false, error: 'MISSING_HOST_SIGNATURE' }
+  }
+  if (!offer.hostPublicKey) {
+    return { ok: false, error: 'MISSING_HOST_PUBLIC_KEY' }
+  }
+
+  let pubBytes: Uint8Array
+  let sigBytes: Uint8Array
+  try {
+    pubBytes = decodeBase64Bytes(offer.hostPublicKey)
+    sigBytes = decodeBase64Bytes(offer.hostSignature)
+  } catch {
+    return { ok: false, error: 'MALFORMED_CRYPTO_ENCODING' }
+  }
+
+  if (pubBytes.length !== 32) {
+    return { ok: false, error: 'INVALID_PUBLIC_KEY_LENGTH' }
+  }
+  if (sigBytes.length !== 64) {
+    return { ok: false, error: 'INVALID_SIGNATURE_LENGTH' }
+  }
+
+  const computedFingerprint = toBase64Url(sha256(pubBytes)).slice(0, 16)
+  if (computedFingerprint !== offer.fingerprint) {
+    return { ok: false, error: 'FINGERPRINT_MISMATCH' }
+  }
+
+  if (trustedHostStore) {
+    const trustedKey = trustedHostStore.getTrustedHostKey(offer.hostId)
+    if (trustedKey && trustedKey !== offer.hostPublicKey) {
+      return { ok: false, error: 'HOST_KEY_MISMATCH' }
+    }
+  }
+
+  const tsSec = Math.floor(offer.timestamp / 1000)
+  const message = `${offer.offerId}:${offer.nonce}:${tsSec}:${offer.fingerprint}`
+  const msgBytes = new TextEncoder().encode(message)
+
+  const isValid = nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)
+  if (!isValid) {
+    return { ok: false, error: 'INVALID_HOST_SIGNATURE' }
+  }
+
   return { ok: true }
 }
 
@@ -122,61 +211,31 @@ export function validateMobileRequest(
   if (!credential) {
     return { allowed: false, status: 'UNPAIRED', error: 'DEVICE_NOT_PAIRED' }
   }
-
   if (credential.revoked) {
-    return { allowed: false, status: 'REVOKED', error: 'CREDENTIAL_REVOKED' }
+    return { allowed: false, status: 'UNVERIFIED', error: 'CREDENTIAL_REVOKED' }
   }
-
   if (now > credential.expiresAt) {
-    return { allowed: false, status: 'EXPIRED', error: 'CREDENTIAL_EXPIRED' }
+    return { allowed: false, status: 'AUTH_REQUIRED', error: 'CREDENTIAL_EXPIRED' }
   }
-
-  // Anti-replay protection
   if (!requestNonce || requestNonce.length < 16) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'NONCE_TOO_SHORT' }
   }
-
   if (USED_NONCES.has(requestNonce)) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'REPLAY_DETECTED' }
   }
   USED_NONCES.add(requestNonce)
 
-  // Role limitation: Disallow direct mutations, dispatches, and approvals
   if ((FORBIDDEN_MOBILE_METHODS as readonly string[]).includes(method)) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'FORBIDDEN_MUTATION_METHOD' }
   }
-
-  // Pause and stop remain disabled pending independent audit
   if ((AUDIT_DISABLED_MOBILE_METHODS as readonly string[]).includes(method)) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'PAUSE_STOP_DISABLED_PENDING_AUDIT' }
   }
-
   if (!(ALLOWED_MOBILE_METHODS as readonly string[]).includes(method)) {
     return { allowed: false, status: 'AUTH_REQUIRED', error: 'UNKNOWN_METHOD' }
   }
 
   return { allowed: true, status: 'ONLINE' }
-}
-
-export function verifyHostProofOfPossession(
-  offer: PairingOffer,
-  verifyFn?: (message: string, signature: string, publicKey: string) => boolean
-): { ok: boolean; error?: string } {
-  if (!offer.hostSignature) {
-    return { ok: false, error: 'MISSING_HOST_SIGNATURE' }
-  }
-  if (!offer.hostPublicKey) {
-    return { ok: false, error: 'MISSING_HOST_PUBLIC_KEY' }
-  }
-  const tsSec = Math.floor(offer.timestamp / 1000)
-  const message = `${offer.offerId}:${offer.nonce}:${tsSec}:${offer.fingerprint}`
-  if (verifyFn) {
-    const valid = verifyFn(message, offer.hostSignature, offer.hostPublicKey)
-    if (!valid) {
-      return { ok: false, error: 'INVALID_HOST_SIGNATURE' }
-    }
-  }
-  return { ok: true }
 }
 
 export function simulateMobilePairingHandshake(
@@ -185,18 +244,24 @@ export function simulateMobilePairingHandshake(
   deviceName: string,
   now = Date.now(),
   prohibitedTokens: readonly string[] = [],
-  verifyFn?: (message: string, signature: string, publicKey: string) => boolean
+  trustedHostStore?: TrustedHostStore
 ): { ok: boolean; credential?: MobileDeviceCredential; error?: string } {
   const offerCheck = verifyPairingOffer(offer, now)
   if (!offerCheck.ok) {
     return { ok: false, error: offerCheck.error }
   }
 
-  if (offer.hostSignature || offer.hostPublicKey) {
-    const proofCheck = verifyHostProofOfPossession(offer, verifyFn)
-    if (!proofCheck.ok) {
-      return { ok: false, error: proofCheck.error }
-    }
+  const proofCheck = verifyHostProofOfPossession(offer, trustedHostStore)
+  if (!proofCheck.ok) {
+    return { ok: false, error: proofCheck.error }
+  }
+
+  if (
+    trustedHostStore &&
+    offer.hostPublicKey &&
+    !trustedHostStore.getTrustedHostKey(offer.hostId)
+  ) {
+    trustedHostStore.setTrustedHostKey(offer.hostId, offer.hostPublicKey)
   }
 
   const handshake: PairingHandshake = {
