@@ -205,6 +205,18 @@ export type ManagedBridgeApi = {
     error_message?: string
     data?: Record<string, unknown>
   }>
+  authorizeInference: (
+    projectId: string,
+    taskId: string,
+    provider: string,
+    attemptId?: string
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
   dispatchTask: (
     projectId: string,
     taskId: string,
