@@ -19,6 +19,7 @@ export type ManagedDraft = {
   readonly executor: string
   readonly state: string
   readonly envelope?: Record<string, unknown> | null
+  readonly envelope_sha256?: string | null
   readonly task_id?: string | null
   readonly requested_checks?: readonly string[]
   readonly created_at?: string | null
