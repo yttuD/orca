@@ -61,7 +61,30 @@ export function ManagedProjectRow({
   onRefreshTasks
 }: Props): React.JSX.Element {
   const [dispatchingTaskId, setDispatchingTaskId] = useState<string | null>(null)
+  const [consentingTaskId, setConsentingTaskId] = useState<string | null>(null)
+  const [lastConsentTaskId, setLastConsentTaskId] = useState<string | null>(null)
   const [dispatchError, setDispatchError] = useState<string | null>(null)
+
+  async function handleInferenceConsent(task: ManagedTask) {
+    setConsentingTaskId(task.id)
+    setDispatchError(null)
+    try {
+      const result = await window.api.managed.authorizeInference(
+        p.id,
+        task.id,
+        task.executor
+      )
+      if (result.ok) {
+        setLastConsentTaskId(task.id)
+      } else {
+        setDispatchError(result.error_message || 'El motor no autorizó inferencia.')
+      }
+    } catch (err: unknown) {
+      setDispatchError(err instanceof Error ? err.message : 'Fallo el consentimiento.')
+    } finally {
+      setConsentingTaskId(null)
+    }
+  }
 
   async function handleDispatch(taskId: string) {
     setDispatchingTaskId(taskId)
@@ -139,6 +162,7 @@ export function ManagedProjectRow({
                 const isTaskSelected = selectedTaskId === t.id
                 const isQueued = t.status === 'QUEUED'
                 const isDispatching = dispatchingTaskId === t.id
+                const isConsenting = consentingTaskId === t.id
                 return (
                   <div
                     key={t.id}
@@ -161,19 +185,33 @@ export function ManagedProjectRow({
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {isQueued ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDispatch(t.id)
-                            }}
-                            disabled={isDispatching}
-                            className="inline-flex items-center gap-0.5 rounded bg-sky-600 px-1.5 py-0.5 text-[9px] font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-                            title="Despachar tarea autorizada bajo Windows Job Object"
-                          >
-                            <Play className="size-2.5" />
-                            <span>{isDispatching ? '...' : 'Despachar'}</span>
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleInferenceConsent(t)
+                              }}
+                              disabled={isConsenting || isDispatching}
+                              className="inline-flex items-center gap-0.5 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+                              title="Autorizar inferencia separadamente; puede consumir cuota o generar costos"
+                            >
+                              <span>{isConsenting ? '...' : lastConsentTaskId === t.id ? 'Consentimiento enviado' : 'Autorizar inferencia'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleDispatch(t.id)
+                              }}
+                              disabled={isDispatching || isConsenting}
+                              className="inline-flex items-center gap-0.5 rounded bg-sky-600 px-1.5 py-0.5 text-[9px] font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                              title="Solicitar despacho; el motor debe comprobar consentimiento durable, supervisor y Job Object"
+                            >
+                              <Play className="size-2.5" />
+                              <span>{isDispatching ? '...' : 'Solicitar despacho'}</span>
+                            </button>
+                          </>
                         ) : null}
                         <span className="font-mono text-[9px] text-sky-300 bg-sky-500/10 px-1 rounded">
                           {t.status}
