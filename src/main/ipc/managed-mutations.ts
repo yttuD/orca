@@ -33,8 +33,12 @@ export async function fetchManagedDraftsFromEngine(
       model: typeof d.model === 'string' ? d.model : null,
       base_ref: String(d.base_ref || 'refs/heads/main'),
       base_sha: typeof d.base_sha === 'string' ? d.base_sha : null,
-      state: String(d.state || 'DRAFT'),
-      envelope: (d.envelope as Record<string, unknown> | undefined) || null,
+      state: String(d.status || d.state || 'DRAFT'),
+      envelope:
+        (d.prepared_envelope as Record<string, unknown> | undefined) ||
+        (d.envelope as Record<string, unknown> | undefined) ||
+        null,
+      envelope_sha256: typeof d.envelope_sha256 === 'string' ? d.envelope_sha256 : null,
       task_id: typeof d.task_id === 'string' ? d.task_id : null,
       allowed_paths: Array.isArray(d.allowed_paths) ? d.allowed_paths.map(String) : [],
       requested_checks: Array.isArray(d.requested_checks) ? d.requested_checks.map(String) : [],
