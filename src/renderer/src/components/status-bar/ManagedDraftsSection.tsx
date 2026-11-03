@@ -199,8 +199,8 @@ export function ManagedDraftsSection({
                           <span>TaskEnvelopeV1 Preparado</span>
                         </div>
                         <div className="truncate">
-                          <span className="text-muted-foreground">Task SHA:</span>{' '}
-                          {String(d.envelope.task_sha256 || '').slice(0, 16)}...
+                          <span className="text-muted-foreground">Envelope SHA-256:</span>{' '}
+                          {String(d.envelope_sha256 || '').slice(0, 16)}...
                         </div>
                         <div className="truncate">
                           <span className="text-muted-foreground">Context SHA:</span>{' '}
