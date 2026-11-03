@@ -22,6 +22,7 @@ export function ManagedDraftModal({
     projectMode.toLowerCase() === 'antigravity' ? 'antigravity' : 'codex'
   )
   const [baseRef, setBaseRef] = useState('refs/heads/main')
+  const [baseSha, setBaseSha] = useState('')
   const [requestedChecks, setRequestedChecks] = useState('check_syntax, test_smoke')
   const [maxRuntimeSeconds, setMaxRuntimeSeconds] = useState(600)
   const [saving, setSaving] = useState(false)
@@ -34,6 +35,10 @@ export function ManagedDraftModal({
   async function handleSave() {
     if (!title.trim() || !instructions.trim()) {
       setError('El título y las instrucciones son obligatorios.')
+      return
+    }
+    if (!/^[0-9a-f]{40}$/i.test(baseSha.trim()) || /^0{40}$/.test(baseSha.trim())) {
+      setError('Ingresá el SHA real de 40 caracteres del commit base (no se admiten ceros ni valores ficticios).')
       return
     }
     setSaving(true)
@@ -49,6 +54,7 @@ export function ManagedDraftModal({
         executor,
         model: executor === 'codex' ? 'codex-default' : 'gemini-flash',
         base_ref: baseRef.trim(),
+        base_sha: baseSha.trim(),
         requested_checks: checks,
         max_runtime_seconds: maxRuntimeSeconds
       })
@@ -150,6 +156,24 @@ export function ManagedDraftModal({
                 className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono text-[10px]"
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="draft-base-sha-input" className="text-[10px] font-medium text-muted-foreground">
+              Commit base (SHA Git de 40 caracteres, real y verificable)
+            </label>
+            <input
+              id="draft-base-sha-input"
+              type="text"
+              value={baseSha}
+              onChange={(e) => setBaseSha(e.target.value)}
+              placeholder="Pegá el SHA completo de la rama base"
+              spellCheck={false}
+              className="w-full rounded border border-border bg-background px-2 py-1 text-foreground font-mono text-[10px]"
+            />
+            <span className="text-[9px] text-muted-foreground">
+              Obligatorio para preparar TaskEnvelopeV1; el motor comprobará commit, rama y ContextManifest.
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
