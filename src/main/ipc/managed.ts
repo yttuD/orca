@@ -185,6 +185,12 @@ export async function fetchManagedReviewPacketFromEngine(
   const review_packet: ManagedReviewPacketDTO = {
     project_id: String(rawPkt.project_id || projectId),
     task_id: String(rawPkt.task_id || taskId),
+    repo_id: String(rawPkt.repo_id || ""),
+    task_sha256: typeof rawPkt.task_sha256 === "string" ? rawPkt.task_sha256 : null,
+    context_checkpoint_sha256:
+      typeof rawPkt.context_checkpoint_sha256 === "string"
+        ? rawPkt.context_checkpoint_sha256
+        : null,
     attempt_id: typeof rawPkt.attempt_id === 'string' ? rawPkt.attempt_id : null,
     packet_status: (rawPkt.packet_status as ManagedReviewPacketDTO['packet_status']) || 'NOT_FOUND',
     is_synthetic: Boolean(rawPkt.is_synthetic),
