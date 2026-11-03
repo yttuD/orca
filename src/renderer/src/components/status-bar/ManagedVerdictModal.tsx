@@ -1,121 +1,87 @@
 import React, { useState } from 'react'
-import { AlertCircle, CheckCircle2, Gavel, X } from 'lucide-react'
+import { AlertCircle, Gavel, X } from 'lucide-react'
+import {
+  parseArchitectVerdictV1,
+  type ArchitectVerdictV1,
+  type ExpectedVerdictBinding
+} from './ManagedVerdictValidation'
+import {
+  MANUAL_CHAT_OPTIONS,
+  manualVerdictAuditMode,
+  type ManualChatProvider
+} from './ManagedChatProvider'
 
 type Props = {
   readonly projectId: string
   readonly taskId: string
   readonly expectedContextSha?: string | null
+  readonly expectedTaskSha?: string | null
+  readonly expectedResultSha?: string | null
+  readonly expectedRepoId?: string | null
+  readonly expectedAttemptId?: string | null
+  readonly chatProvider: ManualChatProvider
   readonly isOpen: boolean
   readonly onClose: () => void
   readonly onVerdictApplied: () => void
-}
-
-type ParsedVerdict = {
-  decision: string
-  project_id: string
-  task_id: string
-  context_checkpoint_sha256: string
-  notes?: string
 }
 
 export function ManagedVerdictModal({
   projectId,
   taskId,
   expectedContextSha,
+  expectedTaskSha,
+  expectedResultSha,
+  expectedRepoId,
+  expectedAttemptId,
+  chatProvider,
   isOpen,
   onClose,
   onVerdictApplied
 }: Props): React.JSX.Element | null {
   const [rawJson, setRawJson] = useState('')
-  const [parsed, setParsed] = useState<ParsedVerdict | null>(null)
-  const [parseError, setParseError] = useState<string | null>(null)
   const [operatorConfirmed, setOperatorConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [submitSuccess, setSubmitSuccess] = useState(false)
 
   if (!isOpen) {
     return null
   }
 
-  function handleJsonChange(text: string) {
-    setRawJson(text)
-    setParseError(null)
-    setSubmitError(null)
-    if (!text.trim()) {
-      setParsed(null)
-      return
-    }
-    try {
-      const obj = JSON.parse(text)
-      const decision = String(obj.decision || '').toUpperCase()
-      if (!['ACCEPT', 'REWORK', 'REJECT'].includes(decision)) {
-        setParseError("Decisión inválida. Debe ser 'ACCEPT', 'REWORK' o 'REJECT'.")
-        setParsed(null)
-        return
-      }
-      if (obj.project_id && obj.project_id !== projectId) {
-        setParseError(
-          `Project ID ('${obj.project_id}') no coincide con el proyecto actual ('${projectId}').`
-        )
-        setParsed(null)
-        return
-      }
-      if (obj.task_id && obj.task_id !== taskId) {
-        setParseError(`Task ID ('${obj.task_id}') no coincide con la tarea actual ('${taskId}').`)
-        setParsed(null)
-        return
-      }
-      if (!obj.context_checkpoint_sha256 || obj.context_checkpoint_sha256 === 'NOT_AVAILABLE') {
-        setParseError('El veredicto requiere un context_checkpoint_sha256 verificado.')
-        setParsed(null)
-        return
-      }
-      if (expectedContextSha && obj.context_checkpoint_sha256 !== expectedContextSha) {
-        setParseError(
-          `El context_checkpoint_sha256 ('${obj.context_checkpoint_sha256.slice(0, 12)}...') no coincide con el de la tarea ('${expectedContextSha.slice(0, 12)}...').`
-        )
-        setParsed(null)
-        return
-      }
-      setParsed({
-        decision,
-        project_id: obj.project_id || projectId,
-        task_id: obj.task_id || taskId,
-        context_checkpoint_sha256: obj.context_checkpoint_sha256,
-        notes: obj.notes || obj.reason || ''
-      })
-    } catch {
-      setParseError('JSON inválido o malformado.')
-      setParsed(null)
-    }
+  const binding: ExpectedVerdictBinding = {
+    projectId,
+    taskId,
+    repoId: expectedRepoId,
+    taskSha: expectedTaskSha,
+    resultSha: expectedResultSha,
+    contextSha: expectedContextSha,
+    attemptId: expectedAttemptId
   }
+  const parsed = rawJson.trim() ? parseArchitectVerdictV1(rawJson, binding) : null
+  const canSubmit = parsed?.ok === true && operatorConfirmed && !submitting
 
   async function handleSubmit() {
-    if (!parsed || !operatorConfirmed) {
+    if (!canSubmit || !parsed?.ok) {
       return
     }
+    const verdict: ArchitectVerdictV1 = parsed.verdict
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const res = await window.api.managed.submitVerdict(projectId, {
-        decision: parsed.decision,
-        project_id: parsed.project_id,
-        task_id: parsed.task_id,
-        context_checkpoint_sha256: parsed.context_checkpoint_sha256,
-        notes: parsed.notes
-      })
+      // This is a manual provenance assertion, not cryptographic provider identity.
+      // Python validates the full V1 packet, authorized session and durable evidence.
+      const res = await window.api.managed.submitVerdict(
+        projectId,
+        verdict as unknown as Record<string, unknown>,
+        manualVerdictAuditMode(chatProvider)
+      )
       if (res.ok) {
-        setSubmitSuccess(true)
-        setTimeout(() => {
-          onVerdictApplied()
-          onClose()
-        }, 1500)
+        onVerdictApplied()
+        onClose()
       } else {
-        setSubmitError(res.error_message || 'Fallo al aplicar el veredicto en el backend.')
+        setSubmitError(res.error_message || 'El motor rechazó el veredicto.')
       }
     } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : 'Error inesperado al aplicar veredicto.')
+      setSubmitError(err instanceof Error ? err.message : 'Error al enviar el veredicto.')
     } finally {
       setSubmitting(false)
     }
@@ -123,108 +89,96 @@ export function ManagedVerdictModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-popover p-4 shadow-xl text-xs">
+      <div className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-border bg-popover p-4 shadow-xl text-xs">
         <div className="flex items-center justify-between border-b border-border/40 pb-2">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground">
+          <div className="flex items-center gap-2 font-semibold text-foreground">
             <Gavel className="size-4 text-sky-400" />
-            <span>Ingresar Veredicto del Arquitecto (ChatGPT)</span>
+            <span>Aplicar veredicto V1 — {MANUAL_CHAT_OPTIONS[chatProvider].label}</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            disabled={submitting}
+            aria-label="Cerrar veredicto"
+            className="rounded p-1 text-muted-foreground hover:bg-accent"
           >
             <X className="size-3.5" />
           </button>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="verdict-json-input" className="text-[11px] font-medium text-foreground">
-            Pegar JSON del ArchitectVerdictV1:
-          </label>
-          <textarea
-            id="verdict-json-input"
-            value={rawJson}
-            onChange={(e) => handleJsonChange(e.target.value)}
-            placeholder={`{ "decision": "ACCEPT", "project_id": "${projectId}", "task_id": "${taskId}", "context_checkpoint_sha256": "..." }`}
-            rows={5}
-            className="w-full rounded border border-border bg-background p-2 font-mono text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-sky-500"
-          />
-        </div>
+        <p className="text-[10px] text-muted-foreground">
+          Pegá el JSON íntegro de ArchitectVerdictV1 producido durante la revisión manual.
+          El proveedor es declarado por el operador; Orcastrator no puede verificar quién
+          escribió el texto. El backend comprobará también estados, hashes y evidencia.
+        </p>
 
-        {parseError ? (
-          <div className="flex items-center gap-1.5 rounded bg-rose-500/10 p-2 text-[10px] text-rose-400 border border-rose-500/20">
-            <AlertCircle className="size-3.5 shrink-0" />
-            <span>{parseError}</span>
+        <label htmlFor="managed-verdict-json" className="text-[11px] font-medium">
+          ArchitectVerdictV1 completo
+        </label>
+        <textarea
+          id="managed-verdict-json"
+          value={rawJson}
+          onChange={(event) => {
+            setRawJson(event.target.value)
+            setSubmitError(null)
+            setOperatorConfirmed(false)
+          }}
+          rows={10}
+          spellCheck={false}
+          placeholder={'{"protocol_version":1,"kind":"verdict","project_id":"...","repo_id":"...","task_id":"...","task_sha256":"...","attempt_id":"...","result_sha256":"...","decision":"BLOCK","reason":"...","context_checkpoint_sha256":"...","architect_mode":"chat"}'}
+          className="w-full rounded border border-border bg-background p-2 font-mono text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-sky-500"
+        />
+
+        {parsed && !parsed.ok ? (
+          <div className="flex items-start gap-1.5 rounded border border-rose-500/30 bg-rose-500/10 p-2 text-[10px] text-rose-300">
+            <AlertCircle className="size-3 shrink-0" />
+            <span>{parsed.error}</span>
           </div>
         ) : null}
 
-        {parsed ? (
-          <div className="flex flex-col gap-1 rounded border border-sky-500/30 bg-sky-500/5 p-2 font-mono text-[10px]">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Decisión:</span>
-              <span
-                className={`font-semibold px-1.5 py-0.5 rounded text-[9px] ${
-                  parsed.decision === 'ACCEPT'
-                    ? 'bg-emerald-500/20 text-emerald-400'
-                    : parsed.decision === 'REWORK'
-                      ? 'bg-yellow-500/20 text-yellow-400'
-                      : 'bg-rose-500/20 text-rose-400'
-                }`}
-              >
-                {parsed.decision}
-              </span>
-            </div>
-            <div className="truncate">
-              <span className="text-muted-foreground">Context SHA:</span>{' '}
-              <span className="text-foreground">
-                {parsed.context_checkpoint_sha256.slice(0, 16)}...
-              </span>
-            </div>
+        {parsed?.ok ? (
+          <div className="rounded border border-sky-500/30 bg-sky-500/10 p-2 text-[10px] text-sky-200">
+            Esquema preliminar válido: {parsed.verdict.decision}. La aceptación definitiva
+            depende de las comprobaciones del motor y de la aprobación explícita.
           </div>
         ) : null}
 
-        <label className="flex items-start gap-2 cursor-pointer pt-1 text-[10px] text-muted-foreground">
+        {(!expectedContextSha || !expectedTaskSha || !expectedRepoId) ? (
+          <p className="text-[10px] text-amber-300">
+            Hay identificadores de integridad no disponibles en esta vista.
+            No se presume certificación; el motor debe validar el veredicto antes de aplicarlo.
+          </p>
+        ) : null}
+
+        <label className="flex cursor-pointer items-start gap-2 text-[10px] text-muted-foreground">
           <input
             type="checkbox"
             checked={operatorConfirmed}
-            onChange={(e) => setOperatorConfirmed(e.target.checked)}
+            onChange={(event) => setOperatorConfirmed(event.target.checked)}
+            disabled={!parsed?.ok || submitting}
             className="mt-0.5 rounded border-border"
           />
           <span>
-            Confirmo que este veredicto fue emitido legítimamente por ChatGPT GPT-6 y autorizo su
-            aplicación.
+            Confirmo que seleccioné {MANUAL_CHAT_OPTIONS[chatProvider].label},
+            revisé el resultado personalmente y autorizo aplicar este veredicto
+            a la tarea seleccionada. No declaro que la identidad del chat esté verificada.
           </span>
         </label>
 
         {submitError ? (
-          <div className="rounded bg-rose-500/10 p-2 text-[10px] text-rose-400 border border-rose-500/20">
+          <div className="rounded border border-rose-500/30 bg-rose-500/10 p-2 text-[10px] text-rose-300">
             {submitError}
           </div>
         ) : null}
 
-        {submitSuccess ? (
-          <div className="flex items-center gap-1.5 rounded bg-emerald-500/10 p-2 text-[10px] text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="size-3.5 shrink-0" />
-            <span>¡Veredicto aplicado exitosamente! Estado de tarea actualizado.</span>
-          </div>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2 border-t border-border/40 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded px-2.5 py-1 text-muted-foreground hover:bg-accent text-[11px]"
-          >
+        <div className="flex justify-end gap-2 border-t border-border/40 pt-2">
+          <button type="button" onClick={onClose} disabled={submitting}
+            className="rounded px-2.5 py-1 text-muted-foreground hover:bg-accent text-[11px]">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!parsed || !operatorConfirmed || submitting || submitSuccess}
-            className="rounded bg-sky-600 px-3 py-1 font-medium text-white hover:bg-sky-500 disabled:opacity-50 text-[11px]"
-          >
-            {submitting ? 'Aplicando...' : 'Aplicar Veredicto'}
+          <button type="button" onClick={handleSubmit} disabled={!canSubmit}
+            className="rounded bg-sky-600 px-3 py-1 font-medium text-white hover:bg-sky-500 disabled:opacity-50 text-[11px]">
+            {submitting ? 'Validando...' : 'Aplicar con autorización manual'}
           </button>
         </div>
       </div>
