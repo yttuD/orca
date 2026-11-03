@@ -1,4 +1,5 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { callOperatorEndpoint, checkAndMarkAction } from './managed-operator-session'
 import type { ManagedDraftDTO, ManagedDraftsResult, ManagedMutationResult } from './managed-types'
@@ -214,6 +215,45 @@ export async function exportReviewPacketToFile(
   }
 }
 
+/**
+ * Only the trusted top-level Electron renderer may ask to perform host-local
+ * mutations. A paired Android client or subframe never receives this capability.
+ * A native confirmation dialog supplies the required operator gesture for
+ * irreversible or paid actions; renderer-provided flags are NOT consent.
+ */
+function trustedDesktopWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win || win.isDestroyed() || event.senderFrame !== win.webContents.mainFrame) {
+    return null
+  }
+  return win
+}
+
+const forbidden = (): ManagedMutationResult => ({
+  ok: false,
+  status: 'ERROR',
+  error_code: 'DESKTOP_OPERATOR_REQUIRED',
+  error_message: 'Solo el escritorio local autorizado puede gestionar tareas.'
+})
+
+async function confirmDesktopAction(
+  win: BrowserWindow,
+  action: string,
+  detail: string
+): Promise<boolean> {
+  const result = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Cancelar', 'Autorizar'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'Orcastrator — autorización local',
+    message: action,
+    detail
+  })
+  return result.response === 1
+}
+
 export function registerManagedMutationHandlers(): () => void {
   const handlers = [
     'managed:listDrafts',
@@ -228,27 +268,62 @@ export function registerManagedMutationHandlers(): () => void {
     ipcMain.removeHandler(h)
   }
 
-  ipcMain.handle('managed:listDrafts', (_e, p: string) => fetchManagedDraftsFromEngine(p))
-  ipcMain.handle('managed:createDraft', (_e, p: string, d: Record<string, unknown>) =>
-    createOrUpdateDraftInEngine(p, d)
-  )
-  ipcMain.handle('managed:prepareDraft', (_e, p: string, dId: string) =>
-    prepareDraftInEngine(p, dId)
-  )
-  ipcMain.handle('managed:approveDraft', (_e, p: string, dId: string, notes?: string) =>
-    approveDraftInEngine(p, dId, notes)
-  )
-  ipcMain.handle('managed:dispatchTask', (_e, p: string, tId: string, aId?: string) =>
-    dispatchTaskInEngine(p, tId, aId)
-  )
+  ipcMain.handle('managed:listDrafts', (event, p: string) => {
+    if (!trustedDesktopWindow(event)) return forbidden()
+    return fetchManagedDraftsFromEngine(p)
+  })
+  ipcMain.handle('managed:createDraft', (event, p: string, d: Record<string, unknown>) => {
+    if (!trustedDesktopWindow(event)) return forbidden()
+    return createOrUpdateDraftInEngine(p, d)
+  })
+  ipcMain.handle('managed:prepareDraft', (event, p: string, dId: string) => {
+    if (!trustedDesktopWindow(event)) return forbidden()
+    return prepareDraftInEngine(p, dId)
+  })
+  ipcMain.handle('managed:approveDraft', async (event, p: string, dId: string, notes?: string) => {
+    const win = trustedDesktopWindow(event)
+    if (!win) return forbidden()
+    const yes = await confirmDesktopAction(
+      win,
+      'Aprobar y encolar una tarea gestionada',
+      `Proyecto: ${p}\nBorrador: ${dId}\nEsto registra una aprobación durable del operador.`
+    )
+    if (!yes) return { ...forbidden(), error_code: 'OPERATOR_DECLINED', error_message: 'Aprobación cancelada.' }
+    return approveDraftInEngine(p, dId, notes)
+  })
+  ipcMain.handle('managed:dispatchTask', async (event, p: string, tId: string, aId?: string) => {
+    const win = trustedDesktopWindow(event)
+    if (!win) return forbidden()
+    const yes = await confirmDesktopAction(
+      win,
+      'Despachar una tarea gestionada',
+      `Proyecto: ${p}\nTarea: ${tId}\nIntento: ${aId || 'ATT-001'}\nEl backend exigirá consentimiento de inferencia separado y Job Object válido.`
+    )
+    if (!yes) return { ...forbidden(), error_code: 'OPERATOR_DECLINED', error_message: 'Despacho cancelado.' }
+    return dispatchTaskInEngine(p, tId, aId)
+  })
   ipcMain.handle(
     'managed:submitVerdict',
-    (_e, p: string, v: Record<string, unknown>, mode?: string) => submitVerdictToEngine(p, v, mode)
+    async (event, p: string, v: Record<string, unknown>, mode?: string) => {
+      const win = trustedDesktopWindow(event)
+      if (!win) return forbidden()
+      const taskId = typeof v?.task_id === 'string' ? v.task_id : 'DESCONOCIDA'
+      const decision = typeof v?.decision === 'string' ? v.decision : 'DESCONOCIDA'
+      const yes = await confirmDesktopAction(
+        win,
+        'Confirmar veredicto del arquitecto de chat manual',
+        `Proyecto: ${p}\nTarea: ${taskId}\nDecisión: ${decision}\nEl proveedor es una declaración del operador. El motor verificará los hashes y la evidencia.`
+      )
+      if (!yes) return { ...forbidden(), error_code: 'OPERATOR_DECLINED', error_message: 'Veredicto cancelado.' }
+      return submitVerdictToEngine(p, v, mode)
+    }
   )
   ipcMain.handle(
     'managed:exportReviewPacket',
-    (_e, p: string, tId: string, md: string, fn?: string) =>
-      exportReviewPacketToFile(p, tId, md, fn)
+    (event, p: string, tId: string, md: string, fn?: string) => {
+      if (!trustedDesktopWindow(event)) return { ok: false, error: 'DESKTOP_OPERATOR_REQUIRED' }
+      return exportReviewPacketToFile(p, tId, md, fn)
+    }
   )
 
   return () => {
