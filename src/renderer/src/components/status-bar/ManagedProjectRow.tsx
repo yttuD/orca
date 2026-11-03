@@ -1,6 +1,7 @@
-import React from 'react'
-import { ChevronDown, ChevronRight, ListTodo, RefreshCw, Terminal } from 'lucide-react'
+import React, { useState } from 'react'
+import { ChevronDown, ChevronRight, ListTodo, Play, RefreshCw, Terminal } from 'lucide-react'
 import { ManagedTaskDetailCard } from './ManagedTaskDetailCard'
+import { ManagedDraftsSection } from './ManagedDraftsSection'
 
 export type ManagedProject = {
   readonly id: string
@@ -44,6 +45,7 @@ type Props = {
   loadingExecution: boolean
   onSelectProject: (id: string) => void
   onSelectTask: (taskId: string) => void
+  onRefreshTasks?: () => void
 }
 
 export function ManagedProjectRow({
@@ -55,8 +57,31 @@ export function ManagedProjectRow({
   execution,
   loadingExecution,
   onSelectProject,
-  onSelectTask
+  onSelectTask,
+  onRefreshTasks
 }: Props): React.JSX.Element {
+  const [dispatchingTaskId, setDispatchingTaskId] = useState<string | null>(null)
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
+
+  async function handleDispatch(taskId: string) {
+    setDispatchingTaskId(taskId)
+    setDispatchError(null)
+    try {
+      const res = await window.api.managed.dispatchTask(p.id, taskId)
+      if (res.ok) {
+        if (onRefreshTasks) {
+          onRefreshTasks()
+        }
+      } else {
+        setDispatchError(res.error_message || 'Fallo al despachar la tarea.')
+      }
+    } catch (err: unknown) {
+      setDispatchError(err instanceof Error ? err.message : 'Error al despachar tarea.')
+    } finally {
+      setDispatchingTaskId(null)
+    }
+  }
+
   return (
     <div className="flex flex-col rounded-md border border-border/40 bg-card/60 transition-colors">
       <div
@@ -87,7 +112,7 @@ export function ManagedProjectRow({
       </div>
 
       {isSelected ? (
-        <div className="border-t border-border/30 bg-muted/20 p-2 flex flex-col gap-1.5">
+        <div className="border-t border-border/30 bg-muted/20 p-2 flex flex-col gap-2">
           <div className="flex items-center justify-between text-[10px] font-medium text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <ListTodo className="size-3 text-sky-400" />
@@ -98,6 +123,12 @@ export function ManagedProjectRow({
             ) : null}
           </div>
 
+          {dispatchError ? (
+            <div className="rounded bg-rose-500/10 p-1.5 text-[9px] text-rose-300 border border-rose-500/20">
+              {dispatchError}
+            </div>
+          ) : null}
+
           {tasks.length === 0 && !loadingTasks ? (
             <div className="text-[10px] text-muted-foreground italic pl-1">
               Sin tareas registradas en este proyecto.
@@ -106,6 +137,8 @@ export function ManagedProjectRow({
             <div className="flex flex-col gap-1">
               {tasks.map((t) => {
                 const isTaskSelected = selectedTaskId === t.id
+                const isQueued = t.status === 'QUEUED'
+                const isDispatching = dispatchingTaskId === t.id
                 return (
                   <div
                     key={t.id}
@@ -126,9 +159,26 @@ export function ManagedProjectRow({
                         <Terminal className="size-3 text-zinc-400 shrink-0" />
                         <span className="font-medium truncate">{t.title}</span>
                       </div>
-                      <span className="shrink-0 font-mono text-[9px] text-sky-300 bg-sky-500/10 px-1 rounded">
-                        {t.status}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isQueued ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDispatch(t.id)
+                            }}
+                            disabled={isDispatching}
+                            className="inline-flex items-center gap-0.5 rounded bg-sky-600 px-1.5 py-0.5 text-[9px] font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                            title="Despachar tarea autorizada bajo Windows Job Object"
+                          >
+                            <Play className="size-2.5" />
+                            <span>{isDispatching ? '...' : 'Despachar'}</span>
+                          </button>
+                        ) : null}
+                        <span className="font-mono text-[9px] text-sky-300 bg-sky-500/10 px-1 rounded">
+                          {t.status}
+                        </span>
+                      </div>
                     </div>
 
                     {isTaskSelected ? (
@@ -172,7 +222,11 @@ export function ManagedProjectRow({
                             Sin datos de ejecución disponibles.
                           </div>
                         )}
-                        <ManagedTaskDetailCard projectId={p.id} taskId={t.id} />
+                        <ManagedTaskDetailCard
+                          projectId={p.id}
+                          taskId={t.id}
+                          onStateChanged={onRefreshTasks}
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -180,6 +234,16 @@ export function ManagedProjectRow({
               })}
             </div>
           )}
+
+          <ManagedDraftsSection
+            projectId={p.id}
+            projectMode={p.mode}
+            onTaskCreatedOrChanged={() => {
+              if (onRefreshTasks) {
+                onRefreshTasks()
+              }
+            }}
+          />
         </div>
       ) : null}
     </div>

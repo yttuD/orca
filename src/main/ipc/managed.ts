@@ -243,6 +243,9 @@ export async function fetchManagedActivityFromEngine(
   return { ok: true, status: 'ONLINE', project_id: projectId, activities }
 }
 
+import { registerManagedMutationHandlers } from './managed-mutations'
+export * from './managed-mutations'
+
 export function registerManagedHandlers(): () => void {
   const handlers = [
     'managed:listProjects',
@@ -277,9 +280,12 @@ export function registerManagedHandlers(): () => void {
     fetchManagedActivityFromEngine(p, t, l, b)
   )
 
+  const unregMutations = registerManagedMutationHandlers()
+
   return () => {
     for (const h of handlers) {
       ipcMain.removeHandler(h)
     }
+    unregMutations()
   }
 }

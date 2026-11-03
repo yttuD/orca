@@ -152,6 +152,41 @@ export type ManagedActivityResult = {
   readonly activities: readonly ManagedActivityItemDTO[]
 }
 
+export type ManagedDraftDTO = {
+  readonly draft_id: string
+  readonly project_id: string
+  readonly title: string
+  readonly description: string
+  readonly executor: string
+  readonly model?: string | null
+  readonly base_ref: string
+  readonly base_sha?: string | null
+  readonly state: string
+  readonly envelope?: Record<string, unknown> | null
+  readonly task_id?: string | null
+  readonly allowed_paths?: readonly string[]
+  readonly requested_checks?: readonly string[]
+  readonly max_runtime_seconds?: number
+  readonly created_at?: string | null
+  readonly updated_at?: string | null
+}
+
+export type ManagedDraftsResult = {
+  readonly ok: boolean
+  readonly status: 'ONLINE' | 'OFFLINE' | 'ERROR'
+  readonly error_code?: string
+  readonly error_message?: string
+  readonly drafts: readonly ManagedDraftDTO[]
+}
+
+export type ManagedMutationResult = {
+  readonly ok: boolean
+  readonly status: string
+  readonly error_code?: string
+  readonly error_message?: string
+  readonly data?: Record<string, unknown>
+}
+
 export type ManagedProfileConfig = {
   profile: 'NORMAL' | 'STAGING_LOCAL'
   port: number

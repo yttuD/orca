@@ -284,6 +284,11 @@ export function ManagedStatusSegment({
                       loadingExecution={loadingExecution}
                       onSelectProject={handleSelectProject}
                       onSelectTask={handleSelectTask}
+                      onRefreshTasks={() => {
+                        if (selectedProjectId) {
+                          loadTasks(selectedProjectId)
+                        }
+                      }}
                     />
                   ))}
                 </div>

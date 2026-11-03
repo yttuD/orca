@@ -146,4 +146,87 @@ export type ManagedBridgeApi = {
       readonly timestamp?: string | null
     }[]
   }>
+  listDrafts: (projectId: string) => Promise<{
+    ok: boolean
+    status: 'ONLINE' | 'OFFLINE' | 'ERROR'
+    error_code?: string
+    error_message?: string
+    drafts: readonly {
+      readonly draft_id: string
+      readonly project_id: string
+      readonly title: string
+      readonly description: string
+      readonly executor: string
+      readonly model?: string | null
+      readonly base_ref: string
+      readonly base_sha?: string | null
+      readonly state: string
+      readonly envelope?: Record<string, unknown> | null
+      readonly task_id?: string | null
+      readonly allowed_paths?: readonly string[]
+      readonly requested_checks?: readonly string[]
+      readonly max_runtime_seconds?: number
+      readonly created_at?: string | null
+      readonly updated_at?: string | null
+    }[]
+  }>
+  createDraft: (
+    projectId: string,
+    draft: Record<string, unknown>
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
+  prepareDraft: (
+    projectId: string,
+    draftId: string
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
+  approveDraft: (
+    projectId: string,
+    draftId: string,
+    operatorNotes?: string
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
+  dispatchTask: (
+    projectId: string,
+    taskId: string,
+    attemptId?: string
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
+  submitVerdict: (
+    projectId: string,
+    verdict: Record<string, unknown>,
+    authorizationMode?: string
+  ) => Promise<{
+    ok: boolean
+    status: string
+    error_code?: string
+    error_message?: string
+    data?: Record<string, unknown>
+  }>
+  exportReviewPacket: (
+    projectId: string,
+    taskId: string,
+    markdown: string,
+    suggestedFilename?: string
+  ) => Promise<{ ok: boolean; path?: string; error?: string }>
 }
