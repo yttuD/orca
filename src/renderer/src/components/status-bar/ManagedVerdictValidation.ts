@@ -110,5 +110,22 @@ export function parseArchitectVerdictV1(
   ) {
     return { ok: false, error: 'next_task_id inválido.' }
   }
-  return { ok: true, verdict: r as ArchitectVerdictV1 }
+  return {
+    ok: true,
+    verdict: {
+      protocol_version: 1,
+      kind: 'verdict',
+      project_id: r.project_id as string,
+      repo_id: r.repo_id as string,
+      task_id: r.task_id as string,
+      task_sha256: r.task_sha256 as string,
+      attempt_id: r.attempt_id as string,
+      result_sha256: r.result_sha256 as string,
+      decision: r.decision as ArchitectVerdictV1['decision'],
+      reason: r.reason as string,
+      context_checkpoint_sha256: r.context_checkpoint_sha256 as string,
+      next_task_id: (r.next_task_id as string | null | undefined) ?? null,
+      architect_mode: 'chat'
+    }
+  }
 }
