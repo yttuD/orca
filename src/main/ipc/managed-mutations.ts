@@ -131,6 +131,50 @@ export async function approveDraftInEngine(
   return { ok: true, status: 'SUCCESS', data: res.data }
 }
 
+export async function authorizeInferenceInEngine(
+  projectId: string,
+  taskId: string,
+  provider: string,
+  attemptId = 'ATT-001'
+): Promise<ManagedMutationResult> {
+  const normalizedProvider = provider === 'antigravity' ? 'agy' : provider
+  if (normalizedProvider !== 'codex' && normalizedProvider !== 'agy') {
+    return {
+      ok: false,
+      status: 'ERROR',
+      error_code: 'INVALID_PROVIDER',
+      error_message: 'Ejecutor de inferencia desconocido.'
+    }
+  }
+  const actionKey = `consent:${projectId}:${taskId}:${attemptId}`
+  if (!checkAndMarkAction(actionKey)) {
+    return {
+      ok: false,
+      status: 'ERROR',
+      error_code: 'DUPLICATE_ACTION',
+      error_message: 'Consentimiento duplicado en curso.'
+    }
+  }
+  const res = await callOperatorEndpoint(
+    `/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/authorize-canary`,
+    'POST',
+    {
+      attempt_id: attemptId,
+      provider: normalizedProvider,
+      operator_notes: 'Autorización explícita mediante diálogo nativo de Orcastrator Desktop.'
+    }
+  )
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: 'ERROR',
+      error_code: `HTTP_${res.status}`,
+      error_message: res.error || 'El motor rechazó el consentimiento.'
+    }
+  }
+  return { ok: true, status: 'SUCCESS', data: res.data }
+}
+
 export async function dispatchTaskInEngine(
   projectId: string,
   taskId: string,
@@ -264,6 +308,7 @@ export function registerManagedMutationHandlers(): () => void {
     'managed:createDraft',
     'managed:prepareDraft',
     'managed:approveDraft',
+    'managed:authorizeInference',
     'managed:dispatchTask',
     'managed:submitVerdict',
     'managed:exportReviewPacket'
@@ -295,6 +340,20 @@ export function registerManagedMutationHandlers(): () => void {
     if (!yes) return { ...forbidden(), error_code: 'OPERATOR_DECLINED', error_message: 'Aprobación cancelada.' }
     return approveDraftInEngine(p, dId, notes)
   })
+  ipcMain.handle(
+    'managed:authorizeInference',
+    async (event, p: string, tId: string, provider: string, aId?: string) => {
+      const win = trustedDesktopWindow(event)
+      if (!win) return forbidden()
+      const yes = await confirmDesktopAction(
+        win,
+        'Autorizar consumo de inferencia para esta tarea',
+        `Proyecto: ${p}\\nTarea: ${tId}\\nEjecutor: ${provider}\\nIntento: ${aId || 'ATT-001'}\\nPuede consumir cuota o generar costos. Esta autorización queda registrada por el motor y NO inicia el despacho.`
+      )
+      if (!yes) return { ...forbidden(), error_code: 'OPERATOR_DECLINED', error_message: 'Consentimiento cancelado.' }
+      return authorizeInferenceInEngine(p, tId, provider, aId)
+    }
+  )
   ipcMain.handle('managed:dispatchTask', async (event, p: string, tId: string, aId?: string) => {
     const win = trustedDesktopWindow(event)
     if (!win) return forbidden()
