@@ -166,6 +166,7 @@ export type ManagedDraftDTO = {
   readonly base_sha?: string | null
   readonly state: string
   readonly envelope?: Record<string, unknown> | null
+  readonly envelope_sha256?: string | null
   readonly task_id?: string | null
   readonly allowed_paths?: readonly string[]
   readonly requested_checks?: readonly string[]
