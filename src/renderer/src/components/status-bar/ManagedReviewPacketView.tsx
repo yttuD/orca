@@ -217,17 +217,19 @@ export function ManagedReviewPacketView({
           Abrir {MANUAL_CHAT_OPTIONS[chatProvider].label} (no se envían datos automáticamente)
         </a>
         <div className="flex items-center justify-between">
-        <span className="text-[9px] text-muted-foreground font-mono">
-          Tamaño: {packetLength} bytes
-        </span>
-        <button
-          type="button"
-          onClick={() => setVerdictModalOpen(true)}
-          className="inline-flex items-center gap-1 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 border border-sky-500/40 px-2 py-0.5 text-[9px] font-medium transition-colors"
-        >
-          <Gavel className="size-2.5" />
-          <span>Ingresar Veredicto (ChatGPT)</span>
-        </button>
+          <span className="text-[9px] text-muted-foreground font-mono">
+            Tamaño: {packetLength} bytes
+          </span>
+          <button
+            type="button"
+            onClick={() => setVerdictModalOpen(true)}
+            className="inline-flex items-center gap-1 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 border border-sky-500/40 px-2 py-0.5 text-[9px] font-medium transition-colors"
+          >
+            <Gavel className="size-2.5" />
+            <span>
+              Ingresar veredicto ({chatProvider === 'chatgpt_chat' ? 'ChatGPT' : 'Venice'})
+            </span>
+          </button>
         </div>
       </div>
 
