@@ -23,6 +23,18 @@ function trustedDesktopWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   if (!win || win.isDestroyed() || event.senderFrame !== win.webContents.mainFrame) {
     return null
   }
+  // An external chat link must NEVER inherit privileged local operator IPC.
+  // Only the packaged renderer or a loopback development renderer is eligible.
+  try {
+    const source = new URL(event.senderFrame.url)
+    const packedRenderer = source.protocol === 'file:' && source.pathname.endsWith('/index.html')
+    const localDevRenderer =
+      (source.protocol === 'http:' || source.protocol === 'https:') &&
+      (source.hostname === '127.0.0.1' || source.hostname === 'localhost')
+    if (!packedRenderer && !localDevRenderer) return null
+  } catch {
+    return null
+  }
   return win
 }
 
