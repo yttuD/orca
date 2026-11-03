@@ -52,7 +52,7 @@ export function ManagedDraftModal({
         title: title.trim(),
         instructions: instructions.trim(),
         executor,
-        model: executor === 'codex' ? 'codex-default' : 'gemini-flash',
+        model: executor === 'codex' ? 'default' : 'gemini-3.8-flash-medium',
         base_ref: baseRef.trim(),
         base_sha: baseSha.trim(),
         requested_checks: checks,
