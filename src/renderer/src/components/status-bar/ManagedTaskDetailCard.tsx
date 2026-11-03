@@ -90,7 +90,7 @@ export function ManagedTaskDetailCard({
             }`}
           >
             <FileText className="size-3" />
-            <span>Revisión ChatGPT</span>
+            <span>Revisión de chat</span>
           </button>
           <button
             type="button"
