@@ -19,6 +19,8 @@ export const managedApi = {
     ipcRenderer.invoke('managed:prepareDraft', projectId, draftId),
   approveDraft: (projectId: string, draftId: string, notes?: string) =>
     ipcRenderer.invoke('managed:approveDraft', projectId, draftId, notes),
+  authorizeInference: (projectId: string, taskId: string, provider: string, attemptId?: string) =>
+    ipcRenderer.invoke('managed:authorizeInference', projectId, taskId, provider, attemptId),
   dispatchTask: (projectId: string, taskId: string, attemptId?: string) =>
     ipcRenderer.invoke('managed:dispatchTask', projectId, taskId, attemptId),
   submitVerdict: (
