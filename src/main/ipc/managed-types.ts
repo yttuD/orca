@@ -79,6 +79,7 @@ export type ManagedReviewPacketDTO = {
   readonly packet_status: 'AVAILABLE' | 'NOT_FOUND' | 'NOT_RUN' | 'UNVERIFIED' | 'ERROR'
   readonly provenance: 'AUTHENTIC' | 'SYNTHETIC' | 'UNVERIFIED' | string
   readonly hash_status: 'VERIFIED' | 'MISMATCH' | 'NOT_RUN' | string
+  readonly certification_status?: string
   readonly is_synthetic: boolean
   readonly execution_type: string
   readonly status: string
