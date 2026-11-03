@@ -193,6 +193,9 @@ export async function fetchManagedReviewPacketFromEngine(
         : null,
     attempt_id: typeof rawPkt.attempt_id === 'string' ? rawPkt.attempt_id : null,
     packet_status: (rawPkt.packet_status as ManagedReviewPacketDTO['packet_status']) || 'NOT_FOUND',
+    provenance: String(rawPkt.provenance || 'UNVERIFIED'),
+    hash_status: String(rawPkt.hash_status || 'NOT_RUN'),
+    certification_status: String(rawPkt.certification_status || 'UNCERTIFIED'),
     is_synthetic: Boolean(rawPkt.is_synthetic),
     execution_type: String(rawPkt.execution_type || 'REAL'),
     status: String(rawPkt.status || 'NOT_RUN'),
@@ -205,6 +208,12 @@ export async function fetchManagedReviewPacketFromEngine(
       typeof rawPkt.process_exit_code === 'number' ? rawPkt.process_exit_code : null,
     verdict: typeof rawPkt.verdict === 'string' ? rawPkt.verdict : null,
     checks_count: Number(rawPkt.checks_count || 0),
+    checks_summary: rawPkt.checks_summary && typeof rawPkt.checks_summary === 'object'
+      ? (rawPkt.checks_summary as ManagedReviewPacketDTO['checks_summary'])
+      : { passed: 0, failed: 0, total: 0 },
+    checks: Array.isArray(rawPkt.checks)
+      ? (rawPkt.checks as ManagedReviewPacketDTO['checks'])
+      : [],
     markdown_packet: typeof rawPkt.markdown_packet === 'string' ? rawPkt.markdown_packet : null
   }
   return { ok: true, status: 'ONLINE', review_packet }
