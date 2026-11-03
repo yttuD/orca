@@ -24,6 +24,12 @@ export type EvidenceDTO = {
 }
 
 export type ReviewPacketDTO = {
+  readonly project_id?: string
+  readonly task_id?: string
+  readonly repo_id?: string
+  readonly task_sha256?: string | null
+  readonly context_checkpoint_sha256?: string | null
+  readonly attempt_id?: string | null
   readonly packet_status: string
   readonly provenance: string
   readonly hash_status: string
