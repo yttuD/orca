@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { Check, Copy, Download, Gavel, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Check, Copy, Download, Gavel, ShieldAlert } from 'lucide-react'
 import type { ReviewPacketDTO } from './ManagedTaskDetailTypes'
 import { computeSha256Hex, exportMarkdownFile } from './ManagedTaskDetailTypes'
 import { ManagedVerdictModal } from './ManagedVerdictModal'
+import {
+  MANUAL_CHAT_OPTIONS,
+  loadManualChatProvider,
+  saveManualChatProvider,
+  type ManualChatProvider
+} from './ManagedChatProvider'
 
 type Props = {
   readonly projectId: string
@@ -22,15 +28,25 @@ export function ManagedReviewPacketView({
   const [exported, setExported] = useState(false)
   const [computedSha, setComputedSha] = useState<string | null>(null)
   const [verdictModalOpen, setVerdictModalOpen] = useState(false)
+  const [chatProvider, setChatProvider] = useState<ManualChatProvider>(loadManualChatProvider)
+
+  function chooseChatProvider(next: ManualChatProvider) {
+    setChatProvider(next)
+    saveManualChatProvider(next)
+  }
 
   useEffect(() => {
     let active = true
     if (reviewPacket?.markdown_packet) {
-      computeSha256Hex(reviewPacket.markdown_packet).then((hex) => {
-        if (active) {
-          setComputedSha(hex)
-        }
-      })
+      computeSha256Hex(reviewPacket.markdown_packet)
+        .then((hex) => {
+          if (active) {
+            setComputedSha(hex)
+          }
+        })
+        .catch(() => {
+          if (active) setComputedSha(null)
+        })
     } else {
       setComputedSha(null)
     }
@@ -74,11 +90,6 @@ export function ManagedReviewPacketView({
     )
   }
 
-  const shaMatches =
-    computedSha &&
-    reviewPacket.canonical_sha256 &&
-    computedSha.toLowerCase() === reviewPacket.canonical_sha256.toLowerCase()
-
   const packetLength = reviewPacket.markdown_packet
     ? new TextEncoder().encode(reviewPacket.markdown_packet).length
     : 0
@@ -101,15 +112,9 @@ export function ManagedReviewPacketView({
           >
             {reviewPacket.provenance}
           </span>
-          {shaMatches ? (
-            <span className="rounded bg-emerald-950/40 px-1 py-0.5 text-[8.5px] text-emerald-300 font-mono inline-flex items-center gap-0.5">
-              <ShieldCheck className="size-2.5" /> SHA VERIFIED
-            </span>
-          ) : (
-            <span className="rounded bg-zinc-800 px-1 py-0.5 text-[8.5px] text-zinc-400 font-mono">
-              {reviewPacket.hash_status}
-            </span>
-          )}
+          <span className="rounded bg-zinc-800 px-1 py-0.5 text-[8.5px] text-zinc-400 font-mono">
+            Result hash: {reviewPacket.hash_status}
+          </span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -139,7 +144,7 @@ export function ManagedReviewPacketView({
             ) : (
               <Download className="size-2.5" />
             )}
-            <span>{exported ? 'Exportado!' : 'Exportar .md'}</span>
+            <span>{exported ? 'Descarga solicitada' : 'Exportar .md'}</span>
           </button>
         </div>
       </div>
@@ -174,7 +179,7 @@ export function ManagedReviewPacketView({
         </div>
         {computedSha ? (
           <div className="col-span-2 truncate">
-            <span className="text-muted-foreground">Computed SHA-256:</span>{' '}
+            <span className="text-muted-foreground">SHA-256 del Markdown (no es el hash canónico del resultado):</span>{' '}
             <span className="text-foreground truncate">{computedSha}</span>
           </div>
         ) : null}
@@ -190,7 +195,28 @@ export function ManagedReviewPacketView({
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-1 border-t border-border/20">
+      <div className="flex flex-col gap-1.5 pt-1 border-t border-border/20">
+        <label className="flex flex-col gap-1 text-[9px] text-muted-foreground">
+          Arquitecto/juez de chat manual (solo uno por revisión)
+          <select
+            aria-label="Proveedor de chat manual"
+            value={chatProvider}
+            onChange={(event) => chooseChatProvider(event.target.value as ManualChatProvider)}
+            className="rounded border border-border bg-background px-2 py-1 text-[10px] text-foreground"
+          >
+            <option value="chatgpt_chat">ChatGPT — Modo Chat · Principal</option>
+            <option value="venice_chat">Venice AI — Modo Chat · Alternativo</option>
+          </select>
+        </label>
+        <a
+          href={MANUAL_CHAT_OPTIONS[chatProvider].url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-400 underline hover:text-sky-300 text-[9px]"
+        >
+          Abrir {MANUAL_CHAT_OPTIONS[chatProvider].label} (no se envían datos automáticamente)
+        </a>
+        <div className="flex items-center justify-between">
         <span className="text-[9px] text-muted-foreground font-mono">
           Tamaño: {packetLength} bytes
         </span>
@@ -202,12 +228,18 @@ export function ManagedReviewPacketView({
           <Gavel className="size-2.5" />
           <span>Ingresar Veredicto (ChatGPT)</span>
         </button>
+        </div>
       </div>
 
       <ManagedVerdictModal
         projectId={projectId}
         taskId={taskId}
-        expectedContextSha={reviewPacket.canonical_sha256}
+        expectedContextSha={reviewPacket.context_checkpoint_sha256}
+        expectedTaskSha={reviewPacket.task_sha256}
+        expectedResultSha={reviewPacket.canonical_sha256}
+        expectedRepoId={reviewPacket.repo_id}
+        expectedAttemptId={reviewPacket.attempt_id}
+        chatProvider={chatProvider}
         isOpen={verdictModalOpen}
         onClose={() => setVerdictModalOpen(false)}
         onVerdictApplied={onVerdictApplied}
