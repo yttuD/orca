@@ -18,6 +18,16 @@ const done = () => {
   process.exit(0)
 }
 
+const holding = mode === 'hold' && result.state === 'ACQUIRED_REQUIRES_RECONCILIATION'
+// Register the release listener BEFORE publishing readiness. Otherwise a
+// fast test runner might send a release message before this worker listens.
+if (holding) {
+  process.on('message', (message) => {
+    if (message === 'release') done()
+  })
+  setTimeout(done, 20000)
+}
+
 process.stdout.write(JSON.stringify({
   state: result.state,
   profileTag: process.env.ORCA_GATE9C2_PROFILE_TAG || 'none',
@@ -29,12 +39,5 @@ process.stdout.write(JSON.stringify({
       }
     : {})
 }) + '\n', () => {
-  if (mode !== 'hold' || result.state !== 'ACQUIRED_REQUIRES_RECONCILIATION') {
-    done()
-    return
-  }
-  process.on('message', (message) => {
-    if (message === 'release') done()
-  })
-  setTimeout(done, 20000)
+  if (!holding) done()
 })
