@@ -103,7 +103,8 @@ describe('Gate 9B-C4-A — supervised recovery diagnosis is read-only and never 
   })
 
   it('treats a missing capture timestamp as UNKNOWN', () => {
-    const { observedAtMs: _ignored, ...withoutTimestamp } = good()
+    const withoutTimestamp: Record<string, unknown> = { ...good() }
+    delete withoutTimestamp.observedAtMs
     const view = projectSupervisedRecoveryDiagnostic(withoutTimestamp, NOW)
     expect(view.freshness).toBe('STALE_OR_INVALID')
     expect(view.lease).toBe('UNKNOWN')
