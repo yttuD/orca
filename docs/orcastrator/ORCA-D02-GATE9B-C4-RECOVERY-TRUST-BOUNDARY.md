@@ -67,3 +67,9 @@ El operador presentó Vitest 5.0.5 en clon QA: **1 archivo/22 pruebas PASS**, du
 - **Brecha explícita:** B1 no abre un mutex, no verifica directorio de instalación, no consulta procesos reales, ni calcula procedencia de una observación nativa; son solo claims. C4-B2 requerirá instrumentar sensores reales de solo lectura en un worktree de QA con garantías de aislamiento. Los resultados de B1 jamás se conectan a spawn de motor ni a UI operativa.
 
 **Siguiente validación:** `pnpm.cmd run tc:node` y Vitest de `managed-supervised-recovery-diagnostic.test.ts` + `managed-supervised-recovery-provenance.test.ts` en el clon QA limpio. Se esperan **2 archivos / 44 pruebas** sólo si aprueban; sin rebuild C++. No modificar WCB, motor operativo, port 8765, GitHub Actions ni merges.
+
+## Evidencia Windows Gate 9B-C4-B1 — PASS (2026-11-04)
+
+El operador aportó Vitest 5.0.5: **2 archivos / 44 pruebas PASS**, duración **514 ms**, inicio 11:59:30 (hora local), marcador `GATE 9B-C4B1 SUPERVISED RECOVERY PROVENANCE QA: PASS`. El alcance es la proyección y coherencia de **declaraciones sintéticas** de fuente, generación, captura y secuencia temporal; no es una validación de sensores operativos, identificación histórica del Job Object ni autorización de reinicio. La salida presentada no transcribe por separado el typecheck.
+
+**C4-B1 PASS en QA**. Siguiente etapa C4-B2: recolección nativa de solo lectura exclusivamente para procesos propios sintéticos, con procedencia ligada a handle real y sin arranque de motor operativo. Ambos PRs DRAFT, WCB intacto, sin GitHub Actions ni merges.
