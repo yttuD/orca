@@ -11,6 +11,13 @@ import { ClientWorkspaceViewParams } from '../../../../shared/rpc-contract/clien
 
 // Registered only with ORCA_SIDEBAR_INPUTS=main, so the producers below always exist.
 
+export const SIDEBAR_REPO_ICONS_METHOD = defineMethod({
+  name: 'sidebarInputs.repoIcons',
+  permission: 'workspace',
+  params: RepoIconDataUrlsParams,
+  handler: async ({ ids }, { runtime }) => requireSwitchedOn(runtime.repoIconDataUrls).read(ids)
+})
+
 export const SIDEBAR_INPUT_METHODS = [
   defineMethod({
     name: 'sidebarInputs.activityFacts',
@@ -19,12 +26,7 @@ export const SIDEBAR_INPUT_METHODS = [
     handler: async (_params, { runtime }) =>
       requireSwitchedOn(runtime.sidebarFacts).getWorkspaceActivityFacts()
   }),
-  defineMethod({
-    name: 'sidebarInputs.repoIcons',
-    permission: 'workspace',
-    params: RepoIconDataUrlsParams,
-    handler: async ({ ids }, { runtime }) => requireSwitchedOn(runtime.repoIconDataUrls).read(ids)
-  }),
+  SIDEBAR_REPO_ICONS_METHOD,
   defineMethod({
     name: 'sidebarInputs.desktopFacts',
     permission: 'workspace',
