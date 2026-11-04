@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3 SENSOR PENDIENTE; MOTOR OPERATIVO BLOQUEADO
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3-B SENSOR TCP PASS (31/31), C3-C IDENTIDAD RESIDUAL PENDIENTE; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -287,6 +287,11 @@ Tras la confirmación **C3-A contrato 28/28 PASS** y `tc:node` sin errores en **
 - `binding.gyp` enlaza `iphlpapi.lib` y `ws2_32.lib`, `addon.cc` registra la exportación y el paquete TypeScript la ofrece en `index.d.ts` y `src/shared/windows-security-addon.ts`. Los mocks antiguos de Windows rechazan explícitamente su invocación.
 - `tests/fixtures/orca-gate9c3-tcp-owner.cjs` y `src/main/ipc/managed-listener-census-windows.test.ts` usan únicamente listeners efímeros `127.0.0.1:0` (puerto asignado por el kernel), verifican PID/FILETIME/ejecutable de un proceso propio y otro sintético, ausencia de listener tras cerrar ambos, rechazo de puertos reservados y supervivencia durante observación. Los procesos de prueba externos expiran en 20 s.
 
-**Estado: COMPILACIÓN C++ NOT_RUN, TYPECHECK NOT_RUN, PRUEBAS SENSOR WINDOWS NOT_RUN.** Se esperan tres nuevos tests nativos; no adjudicar PASS hasta evidencia original del operador. Referencias oficiales de Microsoft: `GetExtendedTcpTable` y sus tablas IPv4/IPv6 (https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable), `GetProcessTimes` (https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes).
+**Estado: SENSOR TCP PASS 31/31 EN WINDOWS (2026-11-04).** Se esperan tres nuevos tests nativos; no adjudicar PASS hasta evidencia original del operador. Referencias oficiales de Microsoft: `GetExtendedTcpTable` y sus tablas IPv4/IPv6 (https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable), `GetProcessTimes` (https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes).
 
 **Límites de seguridad:** un puerto sin listener no demuestra ausencia de un servidor anterior que aún no hizo bind, ni de un árbol huérfano, ni de un Job Object previo. Tampoco impide una carrera entre snapshot y bind. La integración real requerirá mantener el lease nativo durante la observación, verificar por separado existencia de motor anterior y Job Object, verificar que el bind efectivo coincida con la identidad esperada y conservar bloqueo ante cualquier `UNKNOWN`. Prohibido ejecutar motor operativo o tocar WCB.
+
+
+### Evidencia de Windows C3-B — 2026-11-04
+
+El operador confirmó Vitest **2 archivos / 31 pruebas PASS**, duración 772 ms, marcador `GATE 9B-C3B TCP CENSUS QA: PASS` (inicio 09:10:37 hora local). La secuencia anterior incluía compilación nativa; el fragmento compartido en este turno corresponde al resultado final de Vitest y su sentinel, no detalla nuevamente la salida de MSVC. Se certifica el comportamiento del sensor con listeners sintéticos TCP; no se certifica ausencia de motores huérfanos sin puertos. Siguiente Gate 9B-C3-C: identidad de procesos previamente registrados usando PID y tiempo de creación Win32, sin terminar procesos ajenos.
