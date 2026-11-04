@@ -134,6 +134,9 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     acquireManagedMotorLease: () => {
       throw new Error('acquireManagedMotorLease is not faked')
     },
+    verifyManagedMotorLeaseOwnerForQa: () => {
+      throw new Error('verifyManagedMotorLeaseOwnerForQa is not faked')
+    },
     inspectManagedQaTcpListeners: () => {
       throw new Error('inspectManagedQaTcpListeners is not faked')
     },
