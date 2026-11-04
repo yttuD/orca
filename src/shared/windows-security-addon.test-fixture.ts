@@ -131,6 +131,9 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     spawnManagedJobContained: () => {
       throw new Error('spawnManagedJobContained is not faked')
     },
+    closeRecordedManagedJobIfEmptyForQa: () => {
+      throw new Error('closeRecordedManagedJobIfEmptyForQa is not faked')
+    },
     acquireManagedMotorLease: () => {
       throw new Error('acquireManagedMotorLease is not faked')
     },
