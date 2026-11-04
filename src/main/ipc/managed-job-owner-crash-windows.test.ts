@@ -123,7 +123,25 @@ onlyWindows('Gate 9B-C: native Job Object survives supervisor crash', () => {
     } finally {
       stopOwnOwner(owner)
       stopOwnOwner(independent)
-      rmSync(root, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 })
+      // Process death does not imply immediate Windows release of the
+      // synthetic .cjs directory. Do not turn an EBUSY teardown race into
+      // a false failure of Job Object containment; remain bounded and
+      // rethrow any non-transient error.
+      await waitUntil(() => {
+        try {
+          rmSync(root, { recursive: true, force: true })
+          return true
+        } catch (error) {
+          const code =
+            error !== null && typeof error === 'object' && 'code' in error
+              ? error.code
+              : undefined
+          if (code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') {
+            return false
+          }
+          throw error
+        }
+      }, 8000)
     }
   }, 20000)
 })
