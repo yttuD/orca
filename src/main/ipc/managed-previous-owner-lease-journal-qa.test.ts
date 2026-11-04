@@ -100,6 +100,12 @@ windowsOnly('Gate 9B-C3-E-B native lease-fenced QA journal', () => {
       close: () => undefined
     } as unknown as ManagedMotorLeaseHandle
     expect(native().verifyManagedMotorLeaseOwnerForQa(forged, digest).verified).toBe(false)
+    // Copying the prototype of a valid ObjectWrap must also fail; a JS
+    // prototype chain is not proof of the native type tag or live HANDLE.
+    const prototypeForged = Object.create(Object.getPrototypeOf(lease)) as
+      ManagedMotorLeaseHandle
+    expect(native().verifyManagedMotorLeaseOwnerForQa(prototypeForged, digest).verified)
+      .toBe(false)
     expect(() => publishQaPreviousOwnerJournalWithNativeLease(root, record, forged))
       .toThrow('GATE9C3EB_NATIVE_LEASE_NOT_OWNED')
     expect(readQaPreviousOwnerJournal(root).state).toBe('MISSING')
