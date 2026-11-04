@@ -451,3 +451,10 @@ El journal QA usa una cadena SHA-256 para detectar alteraciones accidentales, pe
 Para una recuperación automática futura tras crash se requiere atestación de propietario independiente de la cuenta que puede editar el journal, un contador/secuencia monotónica resistente a rollback, exclusión entre escritores y comprobación independiente de procesos sobrevivientes. SHA-256 simple, una clave recuperable por el mismo usuario o DPAPI con el mismo alcance del usuario no resuelven por sí solos este modelo de amenazas. Mientras no exista un ancla de confianza suficiente, las recuperaciones de dueño anterior deben permanecer bloqueadas y requerir reconciliación supervisada.
 
 Próximo QA: `pnpm.cmd run tc:node` y Vitest con las cinco suites E-D anteriores más `managed-qa-historical-recovery-quarantine.test.ts`. Si todas aprueban se esperan **6 archivos / 38 pruebas PASS** (29 previas + 9 nuevas). Sin recompilación C++, sin cambios a WCB, FastAPI operativo, GitHub Actions ni merges.
+
+
+### Evidencia final Windows C3-E-E — PASS (2026-11-04)
+
+El operador aportó salida de Vitest 5.0.5 desde el worktree aislado `ORCASTRATOR-DESKTOP-QA/orca`: **6 archivos PASS / 38 pruebas PASS**, duración **2,41 s**, inicio a las 11:35:00 (hora local), marcador exacto `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. Los escenarios de integridad, rollback y falsificación de checksum fueron aprobados en el alcance sintético. La salida transcripta no muestra una nueva compilación C++ ni salida de typecheck, no se declaran verificaciones extra a partir de ella.
+
+**C3-E-E PASS EN QA**, sin permiso de arranque. El resultado valida que el clasificador *de QA* siempre devuelve bloqueo al leer cualquier journal histórico no autenticado. No valida recuperación operacional, custodia de una clave exclusiva ni censo histórico de Job Objects privados. No convertir este resultado en `ATTESTED` ni en autorización para FastAPI.
