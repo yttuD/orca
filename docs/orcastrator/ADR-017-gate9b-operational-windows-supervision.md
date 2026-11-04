@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: CONTRATO DE ADMISIÓN IMPLEMENTADO; SUPERVISOR OPERATIVO Y PRUEBAS WINDOWS NO IMPLEMENTADOS
+Estado: GATE 9B-A POLICY PASS (18/18 WINDOWS); GATE 9B-B NATIVE CANDIDATO NOT_RUN; ACTIVACIÓN OPERATIVA BLOQUEADA
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -87,8 +87,10 @@ y una nueva revisión técnica.
 
 Las pruebas
 `src/main/ipc/managed-engine-operational-admission.test.ts`
-cubren rechazos y pureza, pero están **NOT_RUN** a la fecha de
-este documento. No confundir prueba de contrato con contención nativa.
+**PASARON EN WINDOWS el 2026-11-04 (18/18)**. También se confirmó
+`tc:node` PASS sin errores de tipos en 19.596 archivos (12,15 s).
+Las advertencias de Vite sobre carga ESM/CommonJS fueron no bloqueantes.
+Esto NO prueba contención del árbol de procesos nativo.
 
 ## Estado de puertas
 
@@ -100,3 +102,53 @@ este documento. No confundir prueba de contrato con contención nativa.
 - Gate 9B-D: activación operativa, NO AUTORIZADA.
 
 Sin merges ni GitHub Actions. Ambos PR permanecen DRAFT.
+
+
+## Gate 9B-B — Implementación nativa inicial, todavía sin validar (2026-11-04)
+
+En `native/windows-security` se añadió un primitivo **no conectado al
+inicio del motor operativo**:
+
+- `src/managed-job-process.cc/.h`: `spawnManagedJobContained(file, commandLine, cwd, environmentBlock)`.
+- El primitivo crea un Job Object Windows sin nombre ni handles
+  heredables, configura y relee `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
+  inicia el ejecutable con `CREATE_SUSPENDED` y
+  `bInheritHandles=FALSE`, lo asocia al Job Object y recién entonces
+  reanuda el hilo principal. Si falla cualquiera de los pasos,
+  termina el proceso mediante **su propio HANDLE**, sin buscar ni
+  reutilizar PID ajenos.
+- El retorno es un objeto opaco nativo `ManagedJobContainedProcess`
+  con `snapshot()` y `close()`, retiene el único Job HANDLE y lo
+  libera en cierre/GC/caída del proceso padre. `snapshot` ofrece
+  PID y **fecha Win32 de creación en ticks como string** para evitar
+  errores de precisión de números JS, y el conteo de procesos
+  activos asociados; esos valores NO se envían al renderer.
+- El binding `native/windows-security/binding.gyp` agrega el nuevo
+  archivo C++; `index.js`/`index.d.ts` y
+  `src/shared/windows-security-addon.ts` exponen el adaptador tipado.
+- La prueba Windows
+  `src/main/ipc/managed-job-native-windows.test.ts` solo usa
+  un Node sintético temporal que lanza un descendiente. Comprueba
+  la contención de ambos y que el cierre del Job Object termina los
+  dos, sin tocar puertos ni WCB. Está **NOT_RUN**.
+
+La implementación nativa no equivale a una solución operativa completa.
+Todavía faltan *lease* exclusivo contra doble inicio, reconocimiento
+de instancias existentes, integridad de la instalación, verificación
+de permisos, aceptación del operador, integración del arranque/stop
+del FastAPI operativo, comprobación de escenarios de crash del padre
+y evaluación de incompatibilidad de Job Objects anidados. El fallo
+de cualquiera de esas condiciones mantiene la admisión bloqueada.
+
+Microsoft documenta que los hijos creados con `CreateProcess`
+se asocian al job del padre por defecto y que el límite
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` termina los procesos del job al
+cerrar el último handle:
+https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+
+**Resultados de aceptación separados**:
+- 9B-A policy: **18 PASS / Windows**.
+- 9B-B compilar N-API y prueba real padre/hijo: **NOT_RUN**.
+- 9B-C ciclo operativo y falla inesperada del proceso principal:
+  **NOT_IMPLEMENTED / NOT_RUN**.
+- 9B-D habilitación real: **NO AUTORIZADA**.
