@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 PENDIENTE; MOTOR OPERATIVO BLOQUEADO
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3 SENSOR PENDIENTE; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -259,14 +259,20 @@ Clasificación: **9B-C2-N PASS para competencia entre procesos Node sintéticos 
 
 ## Gate 9B-C3 — Reconciliación posterior al lease (contrato en QA)
 
-Estado: **política y tests preparados, NOT_RUN; sensor nativo de procesos/puertos NOT_IMPLEMENTED**. La aprobación C2-N obtenida en Windows (48/48) no prueba que no exista un proceso FastAPI anterior.
+Estado: **política y tests PASS (28/28 Windows); sensor nativo de procesos/puertos NOT_IMPLEMENTED**. La aprobación C2-N obtenida en Windows (48/48) no prueba que no exista un proceso FastAPI anterior.
 
 El módulo puro `src/main/ipc/managed-engine-reconciliation.ts` evalúa exclusivamente evidencias *que en una versión futura deberán estar firmadas por el main/native confiable*, jamás por renderer o variables de entorno sin validación. Requiere instalación y ejecutable verificados, checkout/data-root staging privados, identidad/generación y handle lease presentes, puerto efímero staging, censo posterior al lease, ningún listener (incluido uno propio anterior), ausencia de procesos y Job Objects residuales, y preservación de WCB.
 
 El máximo veredicto `READY_FOR_DISPOSABLE_STAGING_QA` es informativo: **no arranca ni autoriza la ejecución operativa**. Los métodos C3 no hacen IO, no abren sockets, no recorren procesos ni consumen credenciales.
 
-`src/main/ipc/managed-engine-reconciliation.test.ts` incluye **28 escenarios** sobre declaraciones sintéticas: candidato ideal, 26 rechazos y pureza. Rechaza explícitamente perfil NORMAL, puerto reservado operacional, censo hecho antes del lease (carrera TOCTOU), servicio extranjero o propio aún activo, árbol huérfano o desconocido, estado Job Object dudoso y aislamiento de WCB no probado. Pruebas en Windows **NOT_RUN**.
+`src/main/ipc/managed-engine-reconciliation.test.ts` incluye **28 escenarios** sobre declaraciones sintéticas: candidato ideal, 26 rechazos y pureza. Rechaza explícitamente perfil NORMAL, puerto reservado operacional, censo hecho antes del lease (carrera TOCTOU), servicio extranjero o propio aún activo, árbol huérfano o desconocido, estado Job Object dudoso y aislamiento de WCB no probado. Pruebas de contrato en Windows **28/28 PASS, 2026-11-04** (Vitest 448 ms).
 
 Gate C3 REAL aún necesita desarrollar un *sensor* Windows de lectura que asocie puerto y servicio con PID+fecha de creación e identidad del ejecutable, además de una garantía de que el intento de bind ocurra mientras el lease siga retenido. Nunca adoptar o terminar un proceso por PID/puerto; si la identidad es dudosa, bloquear. La evidencia del sensor y su coherencia no pueden ser reemplazadas por el PASS de una política pura.
 
 Se mantiene C2-N aprobado en QA sintético, ambos PR DRAFT, sin GitHub Actions ni modificaciones a WCB.
+
+### Evidencia C3 recibida del operador — 2026-11-04
+
+`git pull --ff-only` avanzó a `8fdbfc5c2c`. El comando `pnpm run tc:node` terminó **sin errores de TypeScript en 19.603 archivos** (11,91 s). La prueba `managed-engine-reconciliation.test.ts` obtuvo **1 archivo / 28 pruebas PASS**, 448 ms y marcador `GATE 9B-C3 RECONCILIATION CONTRACT: PASS`. Las advertencias ESM/CJS de Vite fueron no bloqueantes.
+
+Alcance del PASS: contrato puro sobre evidencia sintética, no inspección Windows real de listeners/procesos. El sensor real es el siguiente requisito, sin habilitar arranque.
