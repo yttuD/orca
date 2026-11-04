@@ -52,3 +52,18 @@ No instalar servicios, no cambiar WCB, no iniciar ni parar motores operativos, n
 - `src/main/ipc/managed-supervised-recovery-diagnostic.test.ts`: **22 pruebas puras preparadas, NOT_RUN**, incluidos estados favorables que deben seguir bloqueados, falsificación de fuente, datos vencidos/futuros, campos adicionales secretos, PID reutilizado, id mal formado, entradas inválidas y determinismo. Se ejecutan sin tocar el host.
 
 Próximo QA: `pnpm.cmd run tc:node` y `pnpm.cmd exec vitest run --config config/vitest.config.ts src/main/ipc/managed-supervised-recovery-diagnostic.test.ts` en el clon Windows QA limpio. Criterio solo si supera la prueba: **1 archivo / 22 tests PASS**. No se requiere rebuild nativo. No afirmar C4-A PASS antes de tener evidencia.
+
+## Gate C4-A — Evidencia Windows PASS (2026-11-04)
+
+El operador presentó Vitest 5.0.5 en clon QA: **1 archivo/22 pruebas PASS**, duración **479 ms**, inicio 11:53:07 local, marcador `GATE 9B-C4A SUPERVISED RECOVERY DIAGNOSTIC QA: PASS`. Se aprueba la función de proyección pura C4-A: nunca autoriza arranque y normaliza observaciones sintéticas. La salida compartida no contiene la transcripción independiente del typecheck; no ampliar el PASS más allá de Vitest.
+
+## Gate C4-B1 — Consistencia de procedencia y orden de sensores sintéticos (CANDIDATO)
+
+**22 pruebas preparadas, NOT_RUN.** La fase B1 es preparación del modelo de observaciones, **no un nuevo sensor real ni un atestado de procedencia**. En particular, que un JSON diga `MAIN_NATIVE_CLAIM` no prueba que fue producido por Win32 o Electron main.
+
+- `src/main/ipc/managed-supervised-recovery-provenance.ts` valida un bundle de claims con identificador de captura UUID, huella de instalación/motor SHA-256 sintética, generación de lease UUID, y tres observaciones: lease, listener y proceso registrado. Exige campos de identidad consistentes entre sensores, tiempo finito/reciente (máximo 15 segundos para presentación), y que el censo de listener/proceso **no preceda** a la observación del lease. Múltiples observaciones no pueden combinarse de distintas generaciones para aparentar un sistema libre.
+- Un claim inválido, ausente, vencido, futuro, previo al lease, aportado desde renderer o que usa un valor de estado desconocido degrada todos los campos actuales a `UNKNOWN` en la proyección C4-A. No inventa permisos positivos. La consistencia lógica devuelve `CONSISTENT_CLAIMS_NOT_PROOF` y `observationAuthority: UNATTESTED_CLAIMS_ONLY`, con `status: BLOCKED` y `startupAllowed:false` **siempre**, incluso ante todas las etiquetas favorables.
+- `src/main/ipc/managed-supervised-recovery-provenance.test.ts`: **22 tests sintéticos NOT_RUN** para identidad cruzada, orden temporal, captura extraña, generación distinta, origen renderer/file, observaciones antiguas/futuras, estado de listener presente, PID reutilizado, campos secretos y determinismo.
+- **Brecha explícita:** B1 no abre un mutex, no verifica directorio de instalación, no consulta procesos reales, ni calcula procedencia de una observación nativa; son solo claims. C4-B2 requerirá instrumentar sensores reales de solo lectura en un worktree de QA con garantías de aislamiento. Los resultados de B1 jamás se conectan a spawn de motor ni a UI operativa.
+
+**Siguiente validación:** `pnpm.cmd run tc:node` y Vitest de `managed-supervised-recovery-diagnostic.test.ts` + `managed-supervised-recovery-provenance.test.ts` en el clon QA limpio. Se esperan **2 archivos / 44 pruebas** sólo si aprueban; sin rebuild C++. No modificar WCB, motor operativo, port 8765, GitHub Actions ni merges.
