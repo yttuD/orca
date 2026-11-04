@@ -13,7 +13,12 @@ export type EdgeBridgeHealth = {
 }
 
 function readLocalFeedToken(): string | null {
-  const root = process.env.LOCALAPPDATA
+  // E2E must never read tokens from the operator's real LOCALAPPDATA.
+  const root = process.env.ORCA_E2E_HEADLESS === '1'
+    ? process.env.ORCA_E2E_HOME_DIR
+      ? join(process.env.ORCA_E2E_HOME_DIR, 'AppData', 'Local')
+      : null
+    : process.env.LOCALAPPDATA
   if (!root) return null
   try {
     const path = join(root, 'Orcastrator', 'bridge', 'edge-chat-bridge', 'token.txt')
