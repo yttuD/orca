@@ -223,6 +223,13 @@ windowsOnly('Gate 9B-C3-E-D native job identity -> held lease -> QA journal', ()
       reason: 'NATIVE_JOB_CLEAN_CLOSE_REFUSED',
       nativeCloseState: 'UNTRUSTED_JOB_OBJECT'
     })
+    // Prototype cloning must NOT count as native ownership either.
+    const cloned = Object.create(Object.getPrototypeOf(job)) as ManagedJobContainedProcess
+    expect(closeOwnedQaJobAndPersistUnattestedStop(root, lease, cloned)).toEqual({
+      state: 'BLOCKED',
+      reason: 'NATIVE_JOB_CLEAN_CLOSE_REFUSED',
+      nativeCloseState: 'UNTRUSTED_JOB_OBJECT'
+    })
     expect(job.snapshot().closed).toBe(false)
     expect(readQaPreviousOwnerJournal(root)).toMatchObject({
       state: 'QA_RECORD_UNATTESTED',
