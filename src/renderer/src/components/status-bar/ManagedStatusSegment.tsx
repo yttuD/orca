@@ -23,6 +23,13 @@ export function ManagedStatusSegment({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [qaLifecycle, setQaLifecycle] = useState<{
+    phase: string
+    owner: string
+    port: number | null
+    restarts: number
+    error_code?: string
+  } | null>(null)
 
   // Selected project & task for inspection
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -85,6 +92,10 @@ export function ManagedStatusSegment({
   const fetchStatus = useCallback(async () => {
     setRefreshing(true)
     try {
+      if (window.api?.managed?.qaEngineLifecycle) {
+        const lifecycle = await window.api.managed.qaEngineLifecycle().catch(() => null)
+        if (lifecycle) setQaLifecycle(lifecycle)
+      }
       if (!window.api?.managed?.listProjects) {
         setStatus('OFFLINE')
         setErrorCode('BRIDGE_UNAVAILABLE')
@@ -252,14 +263,29 @@ export function ManagedStatusSegment({
 
           <ManagedEdgeBridgeHealth />
 
+          {qaLifecycle && qaLifecycle.phase !== 'DISABLED' ? (
+            <div className="rounded border border-amber-500/25 bg-amber-500/5 px-2.5 py-1.5 text-[11px]">
+              <div className="font-medium text-amber-300">
+                Motor QA administrado: {qaLifecycle.phase}
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Instancia desechable {qaLifecycle.owner === 'THIS_ELECTRON' ? 'propiedad de Electron' : 'sin proceso propio'}.
+                {qaLifecycle.port ? ` Puerto local ${qaLifecycle.port}.` : ''}
+                {qaLifecycle.restarts > 0 ? ` Recuperaciones: ${qaLifecycle.restarts}.` : ''}
+                {qaLifecycle.error_code ? ` Código: ${qaLifecycle.error_code}.` : ''}
+                {' '}No conecta el motor operativo.
+              </p>
+            </div>
+          ) : null}
+
           <div className="rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1.5 text-[11px] text-sky-300">
             <div className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="size-3.5 text-sky-400 shrink-0" />
               <span>Gestión Desktop con autorización local</span>
             </div>
             <p className="mt-0.5 text-[10px] text-sky-300/80">
-              El motor Python (127.0.0.1:8765) conserva la autoridad. Consultas y acciones
-              gestionadas requieren validación y autorización local; el feed Edge es solo lectura.
+              El motor Python conserva la autoridad. Las acciones requieren autorización local;
+              el feed Edge es solo lectura y el modo QA no modifica procesos operativos.
             </p>
           </div>
 
@@ -310,7 +336,7 @@ export function ManagedStatusSegment({
               <p className="mt-1 text-[11px] leading-relaxed text-amber-200/80">
                 {status === 'ERROR' && errorCode === 'AUTH_REQUIRED'
                   ? 'El puente local requiere autenticación. Verifique que .operator_token exista o ORCHESTRATOR_TOKEN esté configurado.'
-                  : 'Inicie el servidor orquestador con --staging-local para sincronizar proyectos reales.'}
+                  : 'No hay conexión con el motor administrado. Verifique su estado y perfil antes de habilitar datos reales.'}
               </p>
               {errorMessage ? (
                 <p
