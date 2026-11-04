@@ -131,6 +131,9 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     spawnManagedJobContained: () => {
       throw new Error('spawnManagedJobContained is not faked')
     },
+    acquireManagedMotorLease: () => {
+      throw new Error('acquireManagedMotorLease is not faked')
+    },
     isolatedSpawnBreaksAwayFromJob: () => true,
     hasNativeExport: () => true,
     getDaclAces: (addonPath) => {
