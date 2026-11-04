@@ -209,3 +209,33 @@ export type ManagedQaListenerCensus =
  * A returned UNKNOWN or identityVerified=false always blocks admission.
  */
 export declare function inspectManagedQaTcpListeners(port: number): ManagedQaListenerCensus
+
+/**
+ * C3-C diagnostic QA only. Its input must eventually come from a trusted
+ * previous-owner record (PID + exact creation FILETIME), not renderer state.
+ * NOT_RUNNING, PID_REUSED and MATCH_EXITED do not prove all old descendants
+ * or the previous Python motor's Job Object are gone.
+ */
+export type ManagedQaRecordedProcessObservation = {
+  readonly status:
+    | 'MATCH_RUNNING'
+    | 'MATCH_EXITED'
+    | 'PID_REUSED'
+    | 'NOT_RUNNING'
+    | 'UNKNOWN'
+  readonly pid: number
+  readonly actualCreationTimeTicks: string | null
+  /** Diagnostic only; keep in trusted main/native, never renderer/logs. */
+  readonly executablePath: string | null
+  readonly reason?:
+    | 'OPEN_PROCESS_UNVERIFIED'
+    | 'PROCESS_TIME_UNVERIFIED'
+    | 'PROCESS_STATE_UNVERIFIED'
+    | 'EXECUTABLE_UNVERIFIED'
+}
+
+/** Read-only Windows PID+creation-time identity observation. Never kills. */
+export declare function inspectManagedQaRecordedProcess(
+  pid: number,
+  expectedCreationTimeTicks: string
+): ManagedQaRecordedProcessObservation
