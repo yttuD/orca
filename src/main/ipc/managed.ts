@@ -5,6 +5,7 @@ import type {
   ManagedTaskDTO,
   ManagedExecutionDTO,
   ManagedEvidenceDTO,
+  ManagedCheckDTO,
   ManagedReviewPacketDTO,
   ManagedProjectsResult,
   ManagedTasksResult,
@@ -12,6 +13,23 @@ import type {
   ManagedEvidenceResult,
   ManagedReviewPacketResult
 } from './managed-types'
+
+function parseManagedChecks(value: unknown): ManagedCheckDTO[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return []
+    const check = raw as Record<string, unknown>
+    if (typeof check.name !== 'string' || typeof check.status !== 'string') return []
+    const exitCode = check.exit_code
+    return [{
+      name: check.name,
+      status: check.status,
+      ...(typeof exitCode === 'number' && Number.isFinite(exitCode) || exitCode === null
+        ? { exit_code: exitCode as number | null }
+        : {})
+    }]
+  })
+}
 
 export * from './managed-types'
 export { resolveProfileAndToken, resolveBridgeToken }
@@ -144,7 +162,7 @@ export async function fetchManagedEvidenceFromEngine(
       (rawEv.evidence_status as ManagedEvidenceDTO['evidence_status']) || 'NOT_FOUND',
     execution_mode: String(rawEv.execution_mode || 'REAL'),
     is_synthetic: Boolean(rawEv.is_synthetic),
-    checks: Array.isArray(rawEv.checks) ? (rawEv.checks as readonly Record<string, unknown>[]) : [],
+    checks: parseManagedChecks(rawEv.checks),
     artifacts: Array.isArray(rawEv.artifacts) ? rawEv.artifacts.map(String) : [],
     canonical_sha256: typeof rawEv.canonical_sha256 === 'string' ? rawEv.canonical_sha256 : null,
     result_sha: typeof rawEv.result_sha === 'string' ? rawEv.result_sha : null,
@@ -209,9 +227,7 @@ export async function fetchManagedReviewPacketFromEngine(
     checks_summary: rawPkt.checks_summary && typeof rawPkt.checks_summary === 'object'
       ? (rawPkt.checks_summary as ManagedReviewPacketDTO['checks_summary'])
       : { passed: 0, failed: 0, total: 0 },
-    checks: Array.isArray(rawPkt.checks)
-      ? (rawPkt.checks as ManagedReviewPacketDTO['checks'])
-      : [],
+    checks: parseManagedChecks(rawPkt.checks),
     markdown_packet: typeof rawPkt.markdown_packet === 'string' ? rawPkt.markdown_packet : null
   }
   return { ok: true, status: 'ONLINE', review_packet }
