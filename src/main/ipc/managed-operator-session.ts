@@ -29,6 +29,10 @@ export function checkAndMarkAction(actionKey: string, ttlMs = 3000): boolean {
 }
 
 export function resolveOperatorToken(): string | null {
+  // E2E HOME isolation does not change process.cwd(); walking ancestor paths
+  // could read an actual operator token from a separate host worktree.
+  // Headless E2E may exercise read-only synthetic RPC, never host operator auth.
+  if (process.env.ORCA_E2E_HEADLESS === '1') return null
   const config = resolveProfileAndToken()
   const targetFile =
     config.profile === 'STAGING_LOCAL' ? '.operator_token_staging' : '.operator_token'
@@ -69,6 +73,11 @@ export function resolveOperatorToken(): string | null {
 export async function ensureOperatorSession(
   forceRefresh = false
 ): Promise<{ ok: boolean; sessionCookie?: string; csrfToken?: string; error?: string }> {
+  // Reject before even consulting a cached session or inspecting token paths.
+  // In a disposable E2E run operator REST calls must not escape the fixture.
+  if (process.env.ORCA_E2E_HEADLESS === '1') {
+    return { ok: false, error: 'Operator authentication disabled in headless E2E.' }
+  }
   const now = Date.now()
   if (
     !forceRefresh &&
