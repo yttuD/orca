@@ -1,10 +1,15 @@
 import React from 'react'
 import { LockKeyhole, ShieldAlert } from 'lucide-react'
-import { describeSupervisedRecoveryForRenderer } from './ManagedSupervisedRecoveryPresentation'
+import {
+  describeSupervisedRecoveryForRenderer,
+  describeQaLifecycleForRenderer
+} from './ManagedSupervisedRecoveryPresentation'
 
 type Props = {
   /** Deliberately not an IPC/live motor source. Undefined until QA feed exists. */
   readonly packet?: unknown
+  /** Existing guarded Electron main QA lifecycle, display-only (NOT a native attestation). */
+  readonly qaLifecycle?: unknown
 }
 
 /**
@@ -12,8 +17,9 @@ type Props = {
  * Nothing here can start, stop, authorize, terminate or unlock a motor.
  * Never pass a raw journal or native executable path from Electron main.
  */
-export function ManagedSupervisedRecoveryPanel({ packet }: Props): React.JSX.Element {
+export function ManagedSupervisedRecoveryPanel({ packet, qaLifecycle }: Props): React.JSX.Element {
   const view = describeSupervisedRecoveryForRenderer(packet)
+  const lifecycle = describeQaLifecycleForRenderer(qaLifecycle)
   return (
     <section
       aria-label="Diagnóstico de recuperación supervisada"
@@ -31,6 +37,10 @@ export function ManagedSupervisedRecoveryPanel({ packet }: Props): React.JSX.Ele
         </span>
       </div>
       <dl className="mt-2 grid gap-1.5 text-[10px]">
+        <div>
+          <dt className="text-muted-foreground">Estado declarado del QA de Electron</dt>
+          <dd className="text-foreground">{lifecycle.label}</dd>
+        </div>
         <div>
           <dt className="text-muted-foreground">Proceso actual</dt>
           <dd className="text-foreground">{view.current}</dd>
