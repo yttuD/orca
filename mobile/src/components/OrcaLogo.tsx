@@ -7,7 +7,7 @@ type Props = {
   color?: string
 }
 
-export function OrcaLogo({ size = 24 }: Props): React.JSX.Element {
+export function OrcaLogo({ size = 24 }: Props) {
   return (
     <Image
       source={require('../../assets/icon.png')}
