@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
+import { gate9QaEnabled, qaEngineSupervisor } from './managed-qa-engine-supervisor'
 import { callEngineRpc, resolveProfileAndToken, resolveBridgeToken } from './managed-resolver'
 import type {
   ManagedProjectDTO,
@@ -248,6 +249,8 @@ export function registerManagedHandlers(): () => void {
   const handlers = [
     'managed:listProjects',
     'managed:status',
+    'managed:qaEngineLifecycle',
+    'managed:qaStopEngine',
     'managed:edgeHealth',
     'managed:listTasks',
     'managed:getExecution',
@@ -263,7 +266,22 @@ export function registerManagedHandlers(): () => void {
   ipcMain.handle('managed:status', async () => {
     const res = await fetchManagedProjectsFromEngine()
     const cfg = resolveProfileAndToken()
-    return { status: res.status, ok: res.ok, profile: cfg.profile }
+    return {
+      status: res.status, ok: res.ok, profile: cfg.profile,
+      qa_lifecycle: qaEngineSupervisor.snapshot()
+    }
+  })
+  ipcMain.handle('managed:qaEngineLifecycle', (event) =>
+    trustedDesktopWindow(event)
+      ? qaEngineSupervisor.snapshot()
+      : { phase: 'DISABLED', owner: 'NONE', port: null, restarts: 0,
+          error_code: 'DESKTOP_OPERATOR_REQUIRED' }
+  )
+  ipcMain.handle('managed:qaStopEngine', (event) => {
+    if (!trustedDesktopWindow(event) || !gate9QaEnabled()) {
+      return { ok: false, error_code: 'GATE9_QA_ONLY' }
+    }
+    return { ok: true, lifecycle: qaEngineSupervisor.stop() }
   })
   ipcMain.handle('managed:edgeHealth', (event) =>
     trustedDesktopWindow(event)
@@ -285,8 +303,16 @@ export function registerManagedHandlers(): () => void {
   )
 
   const unregMutations = registerManagedMutationHandlers()
+  const quitQaEngine = () => { qaEngineSupervisor.stop() }
+  app.on('will-quit', quitQaEngine)
+  // Opt-in ONLY in disposable hidden Electron E2E.
+  if (gate9QaEnabled()) {
+    void qaEngineSupervisor.start().catch(() => {})
+  }
 
   return () => {
+    app.off('will-quit', quitQaEngine)
+    qaEngineSupervisor.stop()
     for (const h of handlers) {
       ipcMain.removeHandler(h)
     }
