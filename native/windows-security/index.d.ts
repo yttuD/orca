@@ -103,3 +103,39 @@ export declare function hasNativeExport(name: string): boolean
 
 /** True on builds whose isolated spawn requests job breakaway; older binaries lack the export. */
 export declare function isolatedSpawnBreaksAwayFromJob(): boolean
+
+
+/** Opaque, native-owned process + private unnamed Win32 Job Object. */
+export type ManagedJobContainedSnapshot = {
+  readonly closed: boolean
+  readonly pid: number
+  /** Exact Win32 FILETIME ticks; never convert to JS Number. */
+  readonly creationTimeTicks: string
+  readonly rootRunning: boolean
+  /** Includes root and all descendants still associated with this job. */
+  readonly activeProcesses: number
+}
+
+/**
+ * In this N-API object, the only job HANDLE is held by Electron.
+ * close() is idempotent, kills the whole contained job and does not accept
+ * any PID, process name or network port.
+ */
+export type ManagedJobContainedProcess = {
+  snapshot(): ManagedJobContainedSnapshot
+  close(): void
+}
+
+/**
+ * SECURITY: Low-level primitive; NOT approval to launch an operational motor.
+ * Caller must authenticate the operator and verify the file, environment,
+ * profile, exclusive lease and host policy before using this in production.
+ * Spawns suspended, assigns to private kill-on-close Job Object, then resumes.
+ * environmentBlock: UTF-16 K=V\0...\0\0. Standard handles are NOT inherited.
+ */
+export declare function spawnManagedJobContained(
+  file: string,
+  commandLine: string,
+  cwd: string,
+  environmentBlock: string
+): ManagedJobContainedProcess
