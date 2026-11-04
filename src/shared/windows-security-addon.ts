@@ -124,6 +124,8 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
         raw.spawnManagedJobContained(
           file, commandLine, cwd, environmentBlock
         ),
+      closeRecordedManagedJobIfEmptyForQa: (job, pid, ticks) =>
+        raw.closeRecordedManagedJobIfEmptyForQa(job, pid, ticks),
       acquireManagedMotorLease: (motorIdentitySha256) =>
         raw.acquireManagedMotorLease(motorIdentitySha256),
       verifyManagedMotorLeaseOwnerForQa: (lease, identity) =>
