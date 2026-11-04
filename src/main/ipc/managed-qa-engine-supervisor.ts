@@ -35,9 +35,9 @@ const RESTART_LIMIT = 2
 
 // A visible user session, a packaged app, or any other checkout can only
 // inspect status. They cannot cause a process launch through this module.
-export function gate9QaEnabled(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): boolean {
+export function gate9QaEnabled(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), platform = process.platform): boolean {
   return (
-    process.platform === 'win32' &&
+    platform === 'win32' &&
     env.ORCA_E2E_HEADLESS === '1' &&
     env.ORCA_MANAGED_QA_AUTOSTART === '1' &&
     path.basename(path.dirname(cwd)).toLowerCase() === 'orcastrator-desktop-qa' &&
@@ -307,6 +307,11 @@ export class ManagedQaEngineSupervisor {
 
   // The only process termination target is the ChildProcess retained from
   // this instance's own spawn. NEVER discover/kill by PID, port or process name.
+  simulateCrashForQa(): QaEngineLifecycleStatus {
+    if (gate9QaEnabled() && this.child && !this.stopRequested) this.killOwnedChild()
+    return this.snapshot()
+  }
+
   stop(): QaEngineLifecycleStatus {
     this.stopRequested = true
     this.clearTimers()
