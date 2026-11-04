@@ -85,6 +85,16 @@ onlyWindows('Gate 9B-C: native Job Object survives supervisor crash', () => {
       windowsHide: true,
       stdio: ['ignore', 'ignore', 'ignore']
     })
+    // Another process using the *same* executable, but never assigned to
+    // the private job, must survive the synthetic owner's forced exit.
+    const independent = spawn(process.execPath, [
+      '-e', 'setTimeout(() => process.exit(0), 25000)'
+    ], {
+      env: safeOwnerEnv(),
+      shell: false,
+      windowsHide: true,
+      stdio: 'ignore'
+    })
     try {
       await waitUntil(() => existsSync(ownerFile) && existsSync(grandchildFile))
       const evidence = JSON.parse(readFileSync(ownerFile, 'utf8')) as OwnerEvidence
@@ -95,6 +105,8 @@ onlyWindows('Gate 9B-C: native Job Object survives supervisor crash', () => {
       expect(Number.isSafeInteger(grandchildPid) && grandchildPid > 0).toBe(true)
       expect(isRunning(evidence.jobRootPid)).toBe(true)
       expect(isRunning(grandchildPid)).toBe(true)
+      expect(independent.pid).toBeGreaterThan(0)
+      expect(isRunning(independent.pid!)).toBe(true)
 
       // Kill ONLY the synthetic owner via its own ChildProcess handle.
       // No explicit job.close() is invoked by that parent.
@@ -107,8 +119,10 @@ onlyWindows('Gate 9B-C: native Job Object survives supervisor crash', () => {
         () => !isRunning(evidence.jobRootPid) && !isRunning(grandchildPid),
         8000
       )
+      expect(isRunning(independent.pid!)).toBe(true)
     } finally {
       stopOwnOwner(owner)
+      stopOwnOwner(independent)
       rmSync(root, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 })
     }
   }, 20000)
