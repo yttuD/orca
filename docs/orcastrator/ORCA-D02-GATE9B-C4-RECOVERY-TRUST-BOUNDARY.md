@@ -1,7 +1,7 @@
 # ORCA-D02 Gate 9B-C4 — Límite de confianza y política de recuperación del motor
 
 **Fecha:** 2026-11-04
-**Estado:** DECISIÓN PROVISIONAL PARA MVP / REQUIERE VALIDACIÓN DE INTEGRACIÓN, no implementación de un recovery real.
+**Estado:** DECISIÓN CONFIRMADA POR EL OPERADOR (2026-11-04) / integración y pruebas C4-A pendientes; no hay recuperación real habilitada.
 
 ## Evidencias ya obtenidas
 
@@ -36,3 +36,7 @@ Resumen incremental de controles aprobados en QA: C3-B TCP 31/31; C3-C PID+FILET
 ## No objetivos
 
 No instalar servicios, no cambiar WCB, no iniciar ni parar motores operativos, no habilitar GitHub Actions, no hacer merges y no tratar la falta de evidencias como un PASS. Ambos PRs continúan DRAFT.
+
+## Confirmación explícita del operador — D-C4-01 (2026-11-04)
+
+**DECISIÓN APROBADA: RECUPERACIÓN SUPERVISADA PARA EL MVP.** El operador confirmó «Vamos con recuperación supervisada entonces». Se adopta D-C4-01 como decisión definitiva para el MVP: ante caídas o incertidumbre, mostrar diagnóstico y bloquear reinicios automáticos. El humano podrá revisar la evidencia y supervisar la reconciliación, pero su intervención **no sustituye** comprobaciones técnicas ni permite forzar el arranque. El servicio Windows separado/arranque automático queda **fuera del alcance del MVP**, sin permiso de instalación o implementación.
