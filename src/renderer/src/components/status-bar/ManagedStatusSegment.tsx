@@ -147,11 +147,19 @@ export function ManagedStatusSegment({
     }
   }, [loadTasks])
 
+  // A QA child can become ready *after* the renderer's first OFFLINE
+  // request. Poll faster only while that disposable child is starting or
+  // recovering; retain the normal 15-second cadence otherwise.
+  const qaPhase = qaLifecycle?.phase
   useEffect(() => {
     fetchStatus()
-    const interval = setInterval(fetchStatus, 15000)
+    const qaNeedsReconnect =
+      qaPhase !== undefined &&
+      qaPhase !== 'DISABLED' &&
+      status !== 'ONLINE'
+    const interval = setInterval(fetchStatus, qaNeedsReconnect ? 1500 : 15000)
     return () => clearInterval(interval)
-  }, [fetchStatus])
+  }, [fetchStatus, qaPhase, status])
 
   const handleSelectProject = (projId: string) => {
     if (selectedProjectId === projId) {
