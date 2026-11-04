@@ -464,3 +464,11 @@ El operador aportó salida de Vitest 5.0.5 desde el worktree aislado `ORCASTRATO
 Gate C3-E-E fue revalidado por el operador: Vitest 6 archivos/38 pruebas PASS, 2,41 s, marcador `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. **No interpretar** el PASS como recuperación automática o confianza histórica.
 
 Queda definido el documento arquitectónico `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`: elección provisional de **recuperación supervisada y bloqueante tras crash** para MVP; un supervisor Windows con identidad separada se pospone a decisión explícita. No deben añadirse más fuentes de autorización basadas en SHA-256 no autenticado del mismo archivo; C4 prioriza diagnósticos read-only y una fuente de confianza real antes de nuevos lanzamientos.
+
+## Gate 9B-C4 — Decisión del operador y diseño C4-A de diagnóstico (2026-11-04)
+
+**D-C4-01 confirmada:** el operador eligió explícitamente **recuperación supervisada para el MVP**. Los procesos de recuperación automática o el servicio Windows de identidad separada quedan fuera del alcance del MVP. Esto no autoriza ni siquiera un arranque manual mientras falten verificaciones técnicas: journal histórico sin autenticar, PID desparecido o puerto aparentemente libre **NO** equivalen a proceso ausente.
+
+Contrato fuente de la decisión: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
+
+**C4-A candidato, 22 tests NOT_RUN:** `src/main/ipc/managed-supervised-recovery-diagnostic.ts` y su suite `.test.ts`. Proyección pura de evidencia sintética/no confiable hacia un DTO de estado exclusivamente `BLOCKED` y `startupAllowed:false`; conserva `UNKNOWN` ante observaciones antiguas o ausentes, no expone secretos/rutas ni invoca Windows/IPC/motores. No confundir una etiqueta de fuente `MAIN_NATIVE_CLAIM` con una atestación; no se integra aún con renderer o motor. QA previo `pnpm.cmd run tc:node` y Vitest de esta suite nueva; criterio 22/22 Windows antes de pasar a C4-B.
