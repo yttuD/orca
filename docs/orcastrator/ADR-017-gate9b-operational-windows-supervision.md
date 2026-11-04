@@ -336,3 +336,20 @@ Pendientes posteriores: diseñar journal de generación persistente con raíz se
 ### Evidencia Gate 9B-C3-D, contrato — PASS Windows (2026-11-04)
 
 El operador compartió la salida original de Vitest: **1 archivo PASS, 38 pruebas PASS**, duración **593 ms**, marcador `GATE 9B-C3D OWNER RECOVERY POLICY: PASS`. Se certifica **solo la política determinista con evidencia sintética**, no un journal persistente firmado ni una recuperación de procesos Windows reales. La protección ante journal corrupto, ausencia de registro, dueño anterior interrumpido y estado de Job Object no verificable sigue bloqueando un nuevo arranque. Siguiente tramo: diseño y calificación del journal persistente aislado QA; no conectar a motor operativo ni WCB.
+
+## Gate 9B-C3-E-A — Journal persistente exclusivamente QA (CANDIDATO / NOT_RUN)
+
+Se aprovechan mecanismos ya existentes en Orca: `src/shared/secure-file.ts` (`writeDurableSecureJsonFile`) publica un archivo temporal con permisos restringidos, fsync y rename; `src/shared/secure-path-windows-acl.ts` (`restrictWindowsPathSync`, `readPrivateWindowsFile`) verifica DACL de raíz y archivo al leer. No se usa la API operativa de gestión de motores ni la configuración de WCB.
+
+### Implementación y alcance autorizado
+
+- `src/main/ipc/managed-previous-owner-journal-qa.ts`: journal persistente **telemetría sintética no autenticada**, limitado al clon `ORCASTRATOR-DESKTOP-QA/orca`, Windows, flag de pruebas `ORCA_GATE9C3E_TEST_ONLY=1`, y únicamente a una raíz temporal nueva *hija directa de* `os.tmpdir()` con prefijo `orca-gate9c3e-owner-`. Rechaza otras ubicaciones, perfiles y symlinks de raíz; no usa rutas arbitrarias para registrar datos del motor real.
+- Esquema estricto y acotado (máximo 16 KiB) con identificador SHA-256 sintético de motor, UUID de generación, PID+FILETIME del propietario, PID+FILETIME del proceso asignado, fase, revisión, digest anterior y timestamp. Las únicas transiciones publicables son `PREPARING → JOB_ASSIGNED → CLEAN_STOP`, sin cambios de dueño/generación y con una cadena de revisiones monotónica.
+- Escribe snapshots atómicos y con permisos de archivo restringidos; los lee mediante el lector nativo que comprueba DACL. Truncamiento, corrupción, digest incoherente y registros previos ilegibles **bloquean la escritura siguiente**. `MISSING` no significa `CLEAN_STOP` y no habilita ningún arranque.
+- Un SHA-256 de un registro **no autentica al autor ni previene rollback o reemplazo deliberado por un mismo usuario**. La implementación no fabrica la bandera `journalIntegrity='ATTESTED'`: cada lectura devuelve `QA_RECORD_UNATTESTED` y cada escritura `QA_PERSISTED_UNATTESTED`. Incluso una fase `CLEAN_STOP` persistida no prueba que se cerró un Job Object real.
+- No hay API IPC/renderer, no se enlaza esta telemetría con `evaluatePreviousOwnerRecovery` de C3-D y no se abre ningún puerto ni se inicia/termina proceso. No tocar WCB ni el motor operacional.
+- `src/main/ipc/managed-previous-owner-journal-qa.test.ts`: 12 casos Windows QA usando solo archivos en directorios temporales desechables; incluyen persistencia, cadena correcta, rechazo de salto de fase/revisión/identidad, archivos truncados, contenido alterado, rutas fuera de TEMP y falta de opt-in.
+
+### Estado / próximos controles
+
+**Código publicado; TypeScript y 12 tests NOT_RUN** hasta verificación del operador. Si aprueba, siguiente etapa C3-E-B debe tener un escritor *nativo real* ligado a generación+lease mantenido, con aislamiento de perfil, prueba de posesión del Job Object previo y semántica ante cortes eléctricos; ningún checksum o ACL por sí solo otorga confianza de arranque. Además deben resolverse concurrencia de escritores, rollback, proceso huérfano y reconciliación post-crash. Ambos PR DRAFT, sin GitHub Actions ni merge.
