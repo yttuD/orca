@@ -40,3 +40,15 @@ No instalar servicios, no cambiar WCB, no iniciar ni parar motores operativos, n
 ## Confirmación explícita del operador — D-C4-01 (2026-11-04)
 
 **DECISIÓN APROBADA: RECUPERACIÓN SUPERVISADA PARA EL MVP.** El operador confirmó «Vamos con recuperación supervisada entonces». Se adopta D-C4-01 como decisión definitiva para el MVP: ante caídas o incertidumbre, mostrar diagnóstico y bloquear reinicios automáticos. El humano podrá revisar la evidencia y supervisar la reconciliación, pero su intervención **no sustituye** comprobaciones técnicas ni permite forzar el arranque. El servicio Windows separado/arranque automático queda **fuera del alcance del MVP**, sin permiso de instalación o implementación.
+
+## Gate C4-A — Proyección de diagnóstico supervisado de solo lectura (candidato)
+
+**Implementación preparada; 22 tests NOT_RUN (2026-11-04).** La decisión D-C4-01 está confirmada, pero C4-A todavía requiere validación y **no se conectó a UI, IPC ni a un motor operativo**.
+
+- `src/main/ipc/managed-supervised-recovery-diagnostic.ts`: recibe un valor `unknown` y hora inyectada; proyecta exclusivamente un DTO de diagnóstico limitado, sin I/O ni invocaciones a Win32, red, filesystem, mutex o proceso. El retorno incluye siempre `status: BLOCKED`, `startupAllowed: false`, `reviewRequired: true`, `diagnosticOnly: true` y `evidenceAuthentication: UNATTESTED`.
+- Estados del journal: `MISSING`, `CORRUPT`, `PREPARING`, `JOB_ASSIGNED`, `CLEAN_STOP`, `UNKNOWN`. Un `CLEAN_STOP` histórico también permanece bloqueado, y el DTO sólo contiene campos explícitamente permitidos (no rutas completas, tokens, contraseñas ni variables de entorno).
+- El lease, listener y proceso registrado se presentan únicamente como **observaciones declaradas**. Si falta marca temporal, es futura, no finita o tiene más de 15 s, esos campos se muestran `UNKNOWN`, nunca como ausencia confirmada. El límite de 15 s sirve solo para visualización, **no certifica origen ni autoriza arranque**.
+- PID del propietario y FILETIME son indivisibles: si alguno es inválido, ambos se ocultan. Se valida además un identificador de generación UUID. La identidad mostrada no implica autoría confiable. La fuente `MAIN_NATIVE_CLAIM` también es una declaración del llamador y nunca confiere permisos.
+- `src/main/ipc/managed-supervised-recovery-diagnostic.test.ts`: **22 pruebas puras preparadas, NOT_RUN**, incluidos estados favorables que deben seguir bloqueados, falsificación de fuente, datos vencidos/futuros, campos adicionales secretos, PID reutilizado, id mal formado, entradas inválidas y determinismo. Se ejecutan sin tocar el host.
+
+Próximo QA: `pnpm.cmd run tc:node` y `pnpm.cmd exec vitest run --config config/vitest.config.ts src/main/ipc/managed-supervised-recovery-diagnostic.test.ts` en el clon Windows QA limpio. Criterio solo si supera la prueba: **1 archivo / 22 tests PASS**. No se requiere rebuild nativo. No afirmar C4-A PASS antes de tener evidencia.
