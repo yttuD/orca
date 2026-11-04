@@ -159,3 +159,25 @@ https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
 El operador informó `tc:node` PASS en 19.597 archivos (15,29 s), `node-gyp 12.3.0` con Node 22.23.4 y VS2026/MSBuild compiló `managed-job-process.cc` y produjo `orca_windows_security.node` (`gyp info ok`), y Vitest `managed-job-native-windows.test.ts`: **2 passed (2)** en 727 ms. Confirmado `GATE 9B NATIVE JOB CONTAINMENT QA: PASS`. Vite advirtió sobre ESM/CommonJS, sin errores.
 
 Este PASS es de `job.close()` explícito sobre procesos QA sintéticos. **No es todavía prueba de caída del dueño, lease de instancia única ni aprobación de arranque operativo.**
+
+## Gate 9B-C1 — Caída de propietario del Job Object (CANDIDATO, NOT_RUN)
+
+En el fork Orca se agregaron `tests/fixtures/orca-gate9c-job-owner.cjs` y
+`src/main/ipc/managed-job-owner-crash-windows.test.ts`.
+El test ejecuta exclusivamente procesos Node temporales con entorno
+mínimo y vencimiento propio. Un proceso propietario lanza un proceso
+contenedor en el Job Object; este lanza otro descendiente.
+El test fuerza la caída del propietario a través de su propio handle
+`ChildProcess` **sin llamar a `job.close()`** y espera que ambos
+procesos contenidos terminen. Simultáneamente comprueba que otro
+proceso sintético independiente, con el mismo ejecutable, permanece
+vivo. Nunca mata por PID ni descubre servicios del host.
+
+**Esta prueba NO SE HA EJECUTADO EN WINDOWS.** Requiere el addon nativo
+compilado en el clon QA. El test no toca FastAPI, WCB, los puertos
+8765/8768/8769, ni secretos del motor.
+
+Una aprobación 9B-C1 no certificará lease exclusivo, no adopción de
+incumbentes, integridad de instalación, aprobación local ni disposición
+para iniciar el motor operativo. Se desarrollarán en fases posteriores
+del Gate 9B-C.
