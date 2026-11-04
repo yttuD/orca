@@ -87,3 +87,9 @@ El operador aportó Vitest 5.0.5: **2 archivos / 44 pruebas PASS**, duración **
 **QA próximo:** C4-A (22), C4-B1 (22) y C4-B2-A (8) juntos: **3 archivos / 52 pruebas**, solo si ejecutan y pasan en Windows. `pnpm.cmd run tc:node` seguido de Vitest de las tres suites. Se reutiliza el binario nativo existente, sin nuevo build de C++; éste es un candidato, no un PASS.
 
 **Brecha restante C4-B2-B:** recolector confiable de datos de un motor anterior, verificación de instalación/raíz privada y un censo completo confiable del Job Object previo. El Job Object es anónimo; no afirmar que ya existe esa capacidad. Un sensor que observe el proceso actual jamás puede probar ausencia global de huérfanos. En el MVP la recuperación seguirá supervisada y fail-closed.
+
+## Validación real Windows 9B-C4-B2-A — PASS (2026-11-04)
+
+El operador compartió Vitest v5.0.5 del clon `D:/Programacion-Cosas/ORCASTRATOR-DESKTOP-QA/orca`: **3 archivos / 52 pruebas PASS**, duración **607 ms**, inicio 12:09:38 hora local, marcador exacto `GATE 9B-C4B2A NATIVE OWN-QA OBSERVATION: PASS`. Quedan certificados los escenarios de QA para los sensores Win32 sobre PID/FILETIME, lease y listener **del proceso de prueba actual**. El fragmento aportado muestra Vitest y no la transcripción independiente de MSVC/typecheck.
+
+**C4-B2-A PASS SOLO EN QA**. La existencia y salud del proceso actual no acreditan ni permiten afirmar que un motor anterior o sus descendientes históricos ya no existan. Los resultados permanecen `BLOCKED`, `startupAllowed:false`, `historicalProof:false`; motor operativo y WCB no se modifican.
