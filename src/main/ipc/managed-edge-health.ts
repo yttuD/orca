@@ -60,7 +60,12 @@ export async function probeEdgeBridgeHealth(
     if (Number(res.headers.get('content-length') || 0) > 2048) {
       return { status: 'ERROR', port, error_code: 'FEED_RESPONSE_TOO_LARGE' }
     }
-    const payload: unknown = await res.json()
+    let payload: unknown
+    try {
+      payload = await res.json()
+    } catch {
+      return { status: 'ERROR', port, error_code: 'FEED_INVALID_JSON' }
+    }
     if (!payload || typeof payload !== 'object') {
       return { status: 'ERROR', port, error_code: 'FEED_INVALID_RESPONSE' }
     }
