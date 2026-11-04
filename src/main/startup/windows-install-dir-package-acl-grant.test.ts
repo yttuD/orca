@@ -43,6 +43,8 @@ function installFakeAddon(
     grantAccess: unexpected,
     clearStdHandleInheritance: unexpected,
     spawnDetachedIsolated: unexpected,
+    // Security: ACL mocks must never be able to launch a native job child.
+    spawnManagedJobContained: unexpected,
     isolatedSpawnBreaksAwayFromJob: unexpected,
     hasNativeExport: unexpected,
     grantAccessAsync: async (path, sid, accessMask, options) => {
