@@ -488,3 +488,11 @@ El operador ejecutó C4-A+C4-B1 en Windows QA: **2 archivos / 44 pruebas PASS**,
 Se añadieron `src/main/ipc/managed-qa-native-self-observation.ts` y `src/main/ipc/managed-qa-native-self-observation-windows.test.ts` (**8 pruebas preparadas NOT_RUN**) para C4-B2-A: lectura de sensores Win32 ya existentes únicamente sobre el PID propio de QA y listener propio loopback efímero, luego de verificar un lease nativo real. No se pide ni acepta un PID arbitrario; todos los resultados siguen `BLOCKED`, `startupAllowed:false`, `historicalProof:false`. No hay evidencia del motor anterior ni del Job Object histórico. Fuente de detalles y límites: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
 
 Próxima validación **3 archivos/52 pruebas** (22+22+8) en el clon Windows QA, TypeScript + Vitest, sin recompilar C++ ni tocar WCB/servicios operativos. Ambos PRs DRAFT; sin GitHub Actions ni merges.
+
+## Gate 9B-C4-B2-B — Windows 60/60 PASS; C4-C-A UI candidata (2026-11-04)
+
+El operador aportó Vitest **4 archivos / 60 pruebas PASS**, 1,69 s, inicio 12:21:21 local, marcador `GATE 9B-C4B2B SUPERVISED QA REVIEW PACKET: PASS`. Certifica solo la composición QA de observación nativa propia y cuarentena histórica, no el estado real de un motor anterior ni reinicio operativo.
+
+Se preparó C4-C-A, vista de diagnóstico supervisado en Electron que se monta **solo con estado de lifecycle QA**, sin nuevo IPC ni datos de procesos de producción. No incluye botones/acciones de reinicio, kill, borrado de mutex o adopción. Si falta el paquete de diagnóstico, muestra `Sin diagnóstico QA conectado`; cualquier paquete (incluso falso `ATTESTED`) se normaliza a **BLOQUEADO** sin mostrar rutas, secretos o PID históricos.
+
+Arquitectura: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`. Nuevo QA **NOT_RUN**: 13 pruebas de modelado y 4 de React server-render, más 60 de regresión = **6 archivos / 77 pruebas**. Requiere `pnpm.cmd run tc:web` + `tc:node` + Vitest dirigido, no nueva compilación MSVC. UI aún no conectada a fuente de evidencia real; ambos PR DRAFT, sin GitHub Actions o merge.
