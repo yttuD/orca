@@ -35,6 +35,11 @@ export type ManagedBridgeApi = {
     error_code?: string
     lifecycle?: ManagedQaLifecycleDTO
   }>
+  qaCrashEngine: () => Promise<{
+    ok: boolean
+    error_code?: string
+    lifecycle?: ManagedQaLifecycleDTO
+  }>
   edgeHealth: () => Promise<{
     status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED' | 'LEGACY' | 'ERROR'
     port: number
