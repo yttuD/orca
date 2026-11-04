@@ -29,6 +29,8 @@ module.exports = {
   isolatedSpawnBreaksAwayFromJob: () => getAddon().isolatedSpawnBreaksAwayFromJob(),
   spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
     getAddon().spawnManagedJobContained(file, commandLine, cwd, environmentBlock),
+  closeRecordedManagedJobIfEmptyForQa: (job, pid, ticks) =>
+    getAddon().closeRecordedManagedJobIfEmptyForQa(job, pid, ticks),
   acquireManagedMotorLease: (motorIdentitySha256) =>
     getAddon().acquireManagedMotorLease(motorIdentitySha256),
   verifyManagedMotorLeaseOwnerForQa: (lease, identity) =>
