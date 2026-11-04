@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -119,25 +119,45 @@ windowsOnly('Gate 9B-C3-E-C private Job Object clean close witness', () => {
     // Object. Exiting immediately after spawn() races with Windows process
     // startup and can leave no descendant to test. This gate does not
     // infer membership from a PID or adopt an unrelated process.
+    // Node/libuv on Windows places NON-detached children in a second,
+    // internal kill-on-parent-exit Job Object. That previously killed our
+    // synthetic descendant when its root exited, even though Orcastrator's
+    // own Job Object handle remained open (activeProcesses became zero).
+    // Using detached + unref avoids Node's *internal* Job Object while
+    // remaining in the outer non-breakaway Orcastrator Job Object.
+    const grandchildSource = [
+      "const fs = require('node:fs')",
+      "const path = require('node:path')",
+      "fs.writeFileSync(path.join(process.cwd(), 'grandchild-ready'),",
+      "  String(process.pid), { flag: 'wx' })",
+      "setInterval(() => {}, 250)"
+    ].join('\n')
     const worker = [
       "const fs = require('node:fs')",
       "const path = require('node:path')",
       "const { spawn } = require('node:child_process')",
-      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],",
-      "  { stdio: 'ignore', windowsHide: true })",
+      `const grandchildSource = ${JSON.stringify(grandchildSource)}`,
+      "const child = spawn(process.execPath, ['-e', grandchildSource],",
+      "  { detached: true, stdio: 'ignore', windowsHide: true })",
       "child.once('error', () => process.exit(11))",
+      "child.unref()",
       "const allowExit = path.join(process.cwd(), 'allow-synthetic-root-exit')",
       "setInterval(() => {",
       "  if (fs.existsSync(allowExit)) process.exit(0)",
       "}, 25)"
     ].join('\n')
     await syntheticJob(worker, async (job, root) => {
-      // Before root exit, Windows kernel accounting must prove this job
-      // actually contains the synthetic root AND a synthetic descendant.
+      // Before root exit, require both a real child-startup marker and
+      // accounting of TWO members inside the original native Job Object.
       await waitUntil(() => {
         const snap = job.snapshot()
-        return snap.rootRunning && snap.activeProcesses >= 2
+        return existsSync(path.join(root, 'grandchild-ready')) &&
+          snap.rootRunning && snap.activeProcesses >= 2
       }, 12000, () => JSON.stringify(job.snapshot()))
+      // Reject a transient count from a grandchild that immediately died.
+      await wait(250)
+      expect(job.snapshot().rootRunning).toBe(true)
+      expect(job.snapshot().activeProcesses).toBeGreaterThanOrEqual(2)
 
       // We signal ONLY the disposable root created in this same test.
       writeFileSync(path.join(root, 'allow-synthetic-root-exit'), 'exit', {
