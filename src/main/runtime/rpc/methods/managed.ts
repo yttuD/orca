@@ -90,7 +90,12 @@ async function forwardRpc(
   return (res.data as Record<string, unknown>) ?? {}
 }
 
-const defTask = <const TName extends 'managed.getExecution' | 'managed.getEvidence' | 'managed.presentReviewPacket'>(name: TName) =>
+type ManagedTaskRpcName =
+  | 'managed.getExecution'
+  | 'managed.getEvidence'
+  | 'managed.presentReviewPacket'
+
+const defTask = <TName extends ManagedTaskRpcName>(name: TName) =>
   defineMethod({
     name,
     permission: 'workspace',
