@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3-B SENSOR TCP PASS (31/31), C3-C IDENTIDAD RESIDUAL PENDIENTE; MOTOR OPERATIVO BLOQUEADO
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3-B SENSOR TCP PASS (31/31), C3-C IDENTIDAD REGISTRADA PASS 34/34, C3-D PENDIENTE; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -306,4 +306,11 @@ Implementación QA **read-only** y sin autorización de arranque:
 - La sonda se declara en `index.d.ts`, se exporta desde `addon.cc`, se compila en `binding.gyp` y se integra a `src/shared/windows-security-addon.ts`. Los mocks antiguos rechazan explícitamente su uso.
 - `src/main/ipc/managed-recorded-process-windows.test.ts` contiene tres pruebas con **procesos creados exclusivamente por la prueba**: identidad de un PID propio en escucha efímera y discrepancia de generación, identificación del mismo proceso Node sintético antes y después de su cierre, y validación negativa de PID/FILETIME. Reutiliza el fixture `tests/fixtures/orca-gate9c3-tcp-owner.cjs` con expiración de 20 segundos.
 - **No existe aún** un journal persistente autenticado que proporcione `PID+creationTimeTicks` del motor anterior ni una compuerta que corrobore todos los descendientes del Job Object. `NOT_RUNNING`, `PID_REUSED` y `MATCH_EXITED` **no acreditan** que todo el árbol del motor anterior haya terminado. C3-C es una prueba *parcial* de identidad, no una reconciliación completa ni autorización para iniciar producción.
-- Estado: candidato en rama draft; typecheck, compilación de C++ y tres pruebas nuevas **NOT_RUN EN WINDOWS**. Las 31/31 pruebas C3-B previas continúan siendo evidencia histórica independiente. No ejecutar GitHub Actions, no fusionar ramas, no tocar WCB ni los servicios existentes.
+- Estado: **PASS en Windows**: 3 archivos / 34 pruebas aprobadas en ejecución conjunta (2026-11-04). Las 31/31 pruebas C3-B previas continúan siendo evidencia histórica independiente. No ejecutar GitHub Actions, no fusionar ramas, no tocar WCB ni los servicios existentes.
+
+
+### Evidencia C3-C Windows final — 2026-11-04
+
+El operador repitió la suite C3 después de la corrección del tratamiento `UNKNOWN` (`b316a01a`): **3 archivos / 34 pruebas PASS**, Vitest 826 ms, marcador `GATE 9B-C3C RECORDED PROCESS QA: PASS`. Esta evidencia valida la sonda de PID+FILETIME con procesos Node propios/sintéticos; no aporta evidencia adicional del build MSVC ni autoriza control sobre motores reales. `UNKNOWN` sigue siendo un resultado bloqueante, aunque aceptado como observación válida tras la muerte del proceso sintético.
+
+**C3-C: PASS para lectura de identidad registrada en QA.** C3-D deberá diseñar identidad del propietario previa y posterior a caída, registro resistente a alteraciones/roturas y prueba del árbol de procesos/Job Object completo, siempre sin adopción o terminación de procesos ajenos. Hasta entonces, motor operativo BLOCKED.
