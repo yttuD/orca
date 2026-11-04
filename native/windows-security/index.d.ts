@@ -239,3 +239,24 @@ export declare function inspectManagedQaRecordedProcess(
   pid: number,
   expectedCreationTimeTicks: string
 ): ManagedQaRecordedProcessObservation
+
+/**
+ * C3-E-B QA ONLY: validates an actual live native ManagedMotorLease
+ * ObjectWrap and owning Windows thread for the exact motor hash.
+ *
+ * This is not a signature, a persistent proof or operational admission.
+ * An unrelated process with the same user identity may acquire the mutex
+ * after release and may edit the QA journal.
+ */
+export type ManagedQaNativeLeaseOwnerProof =
+  | { readonly verified: false }
+  | {
+      readonly verified: true
+      readonly ownerPid: number
+      readonly ownerCreationTimeTicks: string
+    }
+
+export declare function verifyManagedMotorLeaseOwnerForQa(
+  lease: unknown,
+  motorIdentitySha256: string
+): ManagedQaNativeLeaseOwnerProof
