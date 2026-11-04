@@ -7,7 +7,7 @@ import { join } from 'node:path'
  */
 export type EdgeBridgeHealth = {
   readonly status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED' | 'LEGACY' | 'ERROR'
-  readonly port: 8768 | 8769
+  readonly port: number
   readonly latest_seq?: number
   readonly error_code?: string
 }
@@ -41,7 +41,22 @@ export async function probeEdgeBridgeHealth(
 ): Promise<EdgeBridgeHealth> {
   // Only a test-profile opt-in may use the isolated v0.2 feed.
   const qaMode = deps.qaMode ?? process.env.ORCA_EDGE_QA_MODE === '1'
-  const port: 8768 | 8769 = qaMode ? 8769 : 8768
+  // An ephemeral port override is allowed ONLY in a disposable headless E2E home.
+  // In ordinary Desktop mode the host/port remain the fixed allowlist: 8768/8769.
+  const e2eIsolated =
+    qaMode && process.env.ORCA_E2E_HEADLESS === '1' &&
+    Boolean(process.env.ORCA_E2E_HOME_DIR)
+  const rawTestPort = e2eIsolated ? process.env.ORCA_EDGE_E2E_PORT : undefined
+  const parsedTestPort =
+    rawTestPort && /^[1-9][0-9]{3,4}$/.test(rawTestPort) ? Number(rawTestPort) : NaN
+  const validTestPort = Number.isInteger(parsedTestPort) &&
+    parsedTestPort >= 1024 && parsedTestPort <= 65535
+  const port: number = e2eIsolated && validTestPort
+    ? parsedTestPort
+    : qaMode ? 8769 : 8768
+  if (rawTestPort && !validTestPort) {
+    return { status: 'NOT_CONFIGURED', port, error_code: 'INVALID_E2E_PORT' }
+  }
   if ((deps.platform ?? process.platform) !== 'win32') {
     return { status: 'NOT_CONFIGURED', port, error_code: 'WINDOWS_ONLY' }
   }
