@@ -38,7 +38,7 @@ function quote(input: string): string {
 
 async function syntheticJob(
   source: string,
-  run: (job: ManagedJobContainedProcess) => Promise<void>
+  run: (job: ManagedJobContainedProcess, root: string) => Promise<void>
 ): Promise<void> {
   const loaded = loadWindowsSecurity()
   if ('error' in loaded) throw new Error('GATE9C3EC_ADDON_UNAVAILABLE')
@@ -53,7 +53,7 @@ async function syntheticJob(
       root,
       environmentBlock()
     )
-    await run(job)
+    await run(job, root)
   } finally {
     // Explicit close affects ONLY the Job Object containing the QA child we
     // created through this exact handle; never a PID found in the host.
@@ -106,19 +106,41 @@ windowsOnly('Gate 9B-C3-E-C private Job Object clean close witness', () => {
   }, 20000)
 
   it('refuses clean-close when the root exits but a synthetic descendant remains alive', async () => {
+    // Handshake: the test must first witness TWO members of its own Job
+    // Object. Exiting immediately after spawn() races with Windows process
+    // startup and can leave no descendant to test. This gate does not
+    // infer membership from a PID or adopt an unrelated process.
     const worker = [
+      "const fs = require('node:fs')",
+      "const path = require('node:path')",
       "const { spawn } = require('node:child_process')",
-      "spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],",
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],",
       "  { stdio: 'ignore', windowsHide: true })",
-      "process.exit(0)"
+      "child.once('error', () => process.exit(11))",
+      "const allowExit = path.join(process.cwd(), 'allow-synthetic-root-exit')",
+      "setInterval(() => {",
+      "  if (fs.existsSync(allowExit)) process.exit(0)",
+      "}, 25)"
     ].join('\n')
-    await syntheticJob(worker, async (job) => {
+    await syntheticJob(worker, async (job, root) => {
+      // Before root exit, Windows kernel accounting must prove this job
+      // actually contains the synthetic root AND a synthetic descendant.
+      await waitUntil(() => {
+        const snap = job.snapshot()
+        return snap.rootRunning && snap.activeProcesses >= 2
+      })
+
+      // We signal ONLY the disposable root created in this same test.
+      writeFileSync(path.join(root, 'allow-synthetic-root-exit'), 'exit', {
+        flag: 'wx'
+      })
       await waitUntil(() => {
         const snap = job.snapshot()
         return !snap.rootRunning && snap.activeProcesses >= 1
       })
+
       expect(job.closeIfEmptyForQa()).toEqual({ state: 'DESCENDANTS_STILL_RUNNING' })
-      expect(job.snapshot().closed).toBe(false)
+      expect(job.snapshot()).toMatchObject({ closed: false, rootRunning: false })
       expect(job.snapshot().activeProcesses).toBeGreaterThanOrEqual(1)
     })
   }, 20000)
