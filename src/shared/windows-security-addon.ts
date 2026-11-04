@@ -118,6 +118,12 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
       clearStdHandleInheritance: () => raw.clearStdHandleInheritance(),
       spawnDetachedIsolated: (file, commandLine, cwd, environmentBlock, onExit) =>
         raw.spawnDetachedIsolated(file, commandLine, cwd, environmentBlock, onExit),
+      // Opaque native job ownership: only main/native code may retain this handle.
+      // No renderer IPC and no production motor startup is wired here.
+      spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
+        raw.spawnManagedJobContained(
+          toNamespacedPath(file), commandLine, toNamespacedPath(cwd), environmentBlock
+        ),
       isolatedSpawnBreaksAwayFromJob: () => raw.isolatedSpawnBreaksAwayFromJob(),
       hasNativeExport: (name) => raw.hasNativeExport(name)
     }
