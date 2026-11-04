@@ -173,15 +173,28 @@ windowsOnly('Gate 9B-C3-C: recorded process Win32 identity is read-only', () => 
         .toBe('MATCH_RUNNING')
       await dispose(fixture.child)
       stopped = true
-      // Windows may retain an exited process handle briefly, and the PID
-      // could theoretically be reused. Never interpret either as authority
-      // to start a new motor.
-      await waitUntil(() =>
-        addon.inspectManagedQaRecordedProcess(fixture.pid, ticks).status !== 'MATCH_RUNNING'
+      // Even after ChildProcess confirms the synthetic owner's exit,
+      // OpenProcess or QueryFullProcessImageNameW may be unable to identify
+      // the former PID. UNKNOWN is deliberately fail-closed, never proof
+      // that an orphan motor or its Job Object has disappeared.
+      // Capture a single observation for the assertion to avoid a second
+      // sample racing with Windows handle retirement or PID reuse.
+      let postExit = addon.inspectManagedQaRecordedProcess(fixture.pid, ticks)
+      await waitUntil(() => {
+        postExit = addon.inspectManagedQaRecordedProcess(fixture.pid, ticks)
+        return postExit.status !== 'MATCH_RUNNING'
+      })
+      expect(['NOT_RUNNING', 'MATCH_EXITED', 'PID_REUSED', 'UNKNOWN']).toContain(
+        postExit.status
       )
-      expect(['NOT_RUNNING', 'MATCH_EXITED', 'PID_REUSED']).toContain(
-        addon.inspectManagedQaRecordedProcess(fixture.pid, ticks).status
-      )
+      if (postExit.status === 'UNKNOWN') {
+        expect([
+          'OPEN_PROCESS_UNVERIFIED',
+          'PROCESS_TIME_UNVERIFIED',
+          'PROCESS_STATE_UNVERIFIED',
+          'EXECUTABLE_UNVERIFIED'
+        ]).toContain(postExit.reason)
+      }
     } finally {
       if (!stopped) await dispose(fixture.child)
     }
