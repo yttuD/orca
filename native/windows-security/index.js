@@ -31,6 +31,8 @@ module.exports = {
     getAddon().spawnManagedJobContained(file, commandLine, cwd, environmentBlock),
   acquireManagedMotorLease: (motorIdentitySha256) =>
     getAddon().acquireManagedMotorLease(motorIdentitySha256),
+  verifyManagedMotorLeaseOwnerForQa: (lease, identity) =>
+    getAddon().verifyManagedMotorLeaseOwnerForQa(lease, identity),
   inspectManagedQaTcpListeners: (port) => getAddon().inspectManagedQaTcpListeners(port),
   inspectManagedQaRecordedProcess: (pid, ticks) =>
     getAddon().inspectManagedQaRecordedProcess(pid, ticks),
