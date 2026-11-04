@@ -93,3 +93,21 @@ El operador aportó Vitest 5.0.5: **2 archivos / 44 pruebas PASS**, duración **
 El operador compartió Vitest v5.0.5 del clon `D:/Programacion-Cosas/ORCASTRATOR-DESKTOP-QA/orca`: **3 archivos / 52 pruebas PASS**, duración **607 ms**, inicio 12:09:38 hora local, marcador exacto `GATE 9B-C4B2A NATIVE OWN-QA OBSERVATION: PASS`. Quedan certificados los escenarios de QA para los sensores Win32 sobre PID/FILETIME, lease y listener **del proceso de prueba actual**. El fragmento aportado muestra Vitest y no la transcripción independiente de MSVC/typecheck.
 
 **C4-B2-A PASS SOLO EN QA**. La existencia y salud del proceso actual no acreditan ni permiten afirmar que un motor anterior o sus descendientes históricos ya no existan. Los resultados permanecen `BLOCKED`, `startupAllowed:false`, `historicalProof:false`; motor operativo y WCB no se modifican.
+
+## Gate C4-B2-A — Windows PASS (2026-11-04)
+
+El operador entregó Vitest v5.0.5: **3 archivos / 52 pruebas PASS**, duración **607 ms**, inicio 12:09:38 local, marcador `GATE 9B-C4B2A NATIVE OWN-QA OBSERVATION: PASS`. Se valida la observación nativa del **proceso actual de QA** con lease, PID+FILETIME y listener local efímero. No valida ningún dato sobre procesos anteriores. El mensaje contiene Vitest, no una transcripción independiente de TypeScript.
+
+## Gate C4-B2-B — Paquete de revisión supervisada y cuarentena histórica (CANDIDATO)
+
+Se prepararon (sin ejecutar aún) `src/main/ipc/managed-qa-supervised-review-packet.ts` y `src/main/ipc/managed-qa-supervised-review-packet-windows.test.ts` (**8 pruebas nuevas NOT_RUN**).
+
+- El componente reutiliza directamente el sensor nativo B2-A del PID propio y el lector C3-E-E del journal ubicado en un directorio temporal QA comprobado. No importa paths arbitrarios al renderer ni recibe un PID o un puerto libre desde archivos.
+- Separa explícitamente `currentInstance.state = CURRENT_QA_PROCESS_ONLY | UNKNOWN` de `previousOwner.state = UNVERIFIED`; el primero solo expresa observación del proceso del test, **nunca ausencia de procesos o descendientes previos**.
+- Cuando existe `CLEAN_STOP` con SHA-256 válido, la razón histórica sigue siendo `CLEAN_STOP_HISTORY_UNATTESTED`; con PREPARING, journal faltante, truncado o raíz rechazada continúa bloqueado. Un fallo de lectura de raíz QA se registra `JOURNAL_READER_REJECTED`, no se interpreta como instalación nueva.
+- El paquete expone únicamente PID y FILETIME del **proceso actual de QA**, razones tipadas y ausencia de evidencias. No incluye rutas, hash del motor, contraseña, comando ejecutable ni acciones. El resultado es SIEMPRE `state='BLOCKED'`, `startupAllowed=false`, `supervisorReviewRequired=true`; su `missingEvidence` declara falta de autoría histórica, censo del Job Object anterior y validez del journal.
+- Las 8 pruebas Windows NOT_RUN abarcan raíz ausente, PREPARING, CLEAN_STOP válido, archivo truncado, falso lease con prototipo copiado, falta de opt-in, raíz fuera de TEMP y filtrado de rutas/datos de ejecución. Los tests usan únicamente sus propios listeners 127.0.0.1, mutex nativo y archivos temporales.
+
+**Importante:** Esta es una etapa de *ensamblado de diagnóstico* para revisión humana, NO un sensor de propietario anterior ni una solución a la brecha C4-B2-B de obtención de atestación histórica. No se integra aún al IPC/renderer real. La imposibilidad de reabrir un Job Object privado anónimo después de la caída sigue sin resolverse.
+
+Próximo QA: ejecutar TypeScript y las cuatro suites C4-A (22), B1 (22), B2-A (8), B2-B (8) en Windows QA limpio. **Esperado únicamente si pasan: 4 archivos / 60 pruebas PASS.** No requiere rebuild C++ ni toca WCB, motor operativo, puerto 8765, GitHub Actions o merges.
