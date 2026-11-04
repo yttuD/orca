@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  describeSupervisedRecoveryForRenderer
+  describeSupervisedRecoveryForRenderer,
+  describeQaLifecycleForRenderer
 } from './ManagedSupervisedRecoveryPresentation'
 
 function packet() {
@@ -155,5 +156,99 @@ describe('Gate 9B-C4-C-A supervised recovery renderer presentation model', () =>
     Object.freeze(original)
     expect(describeSupervisedRecoveryForRenderer(original))
       .toEqual(describeSupervisedRecoveryForRenderer(original))
+  })
+})
+
+
+describe('Gate 9B-C4-C-B existing Electron QA lifecycle projection', () => {
+  it('fails closed without a lifecycle from Electron Main', () => {
+    expect(describeQaLifecycleForRenderer(undefined)).toEqual({
+      state: 'NO_QA_SNAPSHOT',
+      label: 'Sin estado QA confiable de la sesión actual',
+      authority: 'UNATTESTED_LIFECYCLE_ONLY',
+      startupAllowed: false
+    })
+  })
+
+  it('reports a declared ONLINE QA lifecycle without granting launch', () => {
+    expect(describeQaLifecycleForRenderer({
+      phase: 'ONLINE', owner: 'THIS_ELECTRON', port: 55001, restarts: 0
+    })).toMatchObject({
+      state: 'QA_LIFECYCLE_CLAIM_ONLY',
+      label: 'Ciclo QA de Electron: En línea · proceso declarado propio',
+      authority: 'UNATTESTED_LIFECYCLE_ONLY',
+      startupAllowed: false
+    })
+  })
+
+  it('describes a stopped QA lifecycle as a declaration rather than absence of previous motors', () => {
+    const result = describeQaLifecycleForRenderer({ phase: 'STOPPED', owner: 'NONE' })
+    expect(result.label).toContain('Detenido')
+    expect(result.label).toContain('sin proceso declarado')
+    expect(result.startupAllowed).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('NO_PREVIOUS_MOTOR')
+  })
+
+  it('rejects impossible ONLINE lifecycle without an Electron-owned child', () => {
+    expect(describeQaLifecycleForRenderer({
+      phase: 'ONLINE', owner: 'NONE'
+    }).state).toBe('NO_QA_SNAPSHOT')
+  })
+
+  it('rejects a phase invented by an untrusted renderer', () => {
+    expect(describeQaLifecycleForRenderer({
+      phase: 'READY_TO_RESTART', owner: 'THIS_ELECTRON'
+    }).state).toBe('NO_QA_SNAPSHOT')
+  })
+
+  it('rejects an owner string outside the trusted status enumeration', () => {
+    expect(describeQaLifecycleForRenderer({
+      phase: 'STOPPED', owner: 'TRUSTED_HISTORICAL_OWNER'
+    }).state).toBe('NO_QA_SNAPSHOT')
+  })
+
+  it('does not turn the disabled lifecycle into a current-owner observation', () => {
+    expect(describeQaLifecycleForRenderer({
+      phase: 'DISABLED', owner: 'NONE'
+    })).toMatchObject({
+      state: 'NO_QA_SNAPSHOT',
+      startupAllowed: false
+    })
+  })
+
+  it('never displays raw error_code, executable paths, tokens or ports', () => {
+    const report = describeQaLifecycleForRenderer({
+      phase: 'ERROR',
+      owner: 'NONE',
+      error_code: 'C:\\secret\\credentials.txt',
+      executablePath: 'C:\\private\\python.exe',
+      port: 8765,
+      authToken: 'AUTH_SECRET_123',
+      startupAllowed: true
+    })
+    const serialized = JSON.stringify(report)
+    expect(report.startupAllowed).toBe(false)
+    for(const secret of ['credentials.txt', 'python.exe', '8765', 'AUTH_SECRET_123']){
+      expect(serialized).not.toContain(secret)
+    }
+  })
+
+  it('does not call a QA recovery loop a validated historical recovery', () => {
+    const view = describeQaLifecycleForRenderer({
+      phase: 'RECOVERING', owner: 'THIS_ELECTRON', restarts: 10
+    })
+    expect(view.label).toContain('En transición de prueba')
+    expect(view.authority).toBe('UNATTESTED_LIFECYCLE_ONLY')
+    expect(view.startupAllowed).toBe(false)
+  })
+
+  it('is pure and deterministic with frozen caller inputs', () => {
+    const raw = Object.freeze({
+      phase: 'DEGRADED',
+      owner: 'THIS_ELECTRON',
+      error_code: 'QA_ONLY'
+    })
+    expect(describeQaLifecycleForRenderer(raw))
+      .toEqual(describeQaLifecycleForRenderer(raw))
   })
 })
