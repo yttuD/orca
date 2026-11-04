@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO NO IMPLEMENTADO; MOTOR OPERATIVO BLOQUEADO
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 PENDIENTE; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -250,3 +250,9 @@ La versión QA de `native/windows-security` incorpora:
 Validación requerida en Windows QA: `pnpm.cmd run tc:node`, `pnpm.cmd exec node-gyp rebuild --directory native/windows-security`, Vitest de `managed-engine-operational-admission.test.ts`, `managed-engine-lease-qualification.test.ts` y `managed-motor-lease-windows.test.ts`. Se esperan 44 casos del contrato y 4 nativos adicionales si todo funciona. Cualquier error bloquea el Gate, sin relajar aserciones.
 
 No usar GitHub Actions, no fusionar los PR, no tocar WCB, el puerto 8765 ni el motor productivo. La activación real permanece expresamente **NO AUTORIZADA**.
+
+## Evidencia operadora 9B-C2-N — PASS real Windows (2026-11-04)
+
+El operador ejecutó `pnpm run tc:node`: **19.601 archivos sin errores de tipos** (13,26 s). `node-gyp 12.3.0`, Node 22.23.4 Windows x64, Python 3.13.5 y VS2026/MSBuild compilaron `managed-motor-lease.cc` y generaron `orca_windows_security.node`; el resultado concluyó `gyp info ok`. Vitest ejecutó **3 archivos, 48/48 tests PASS**, 1,35 s, con marcador `GATE 9B-C2 NATIVE INTERPROCESS QA: PASS`. Warnings Vite ESM/CJS informativos.
+
+Clasificación: **9B-C2-N PASS para competencia entre procesos Node sintéticos de la misma sesión Windows**; incluye rechazo del competidor bajo otra etiqueta de perfil, cierre normal, liberación tras caída, exclusividad entre identidades diferentes y comprobaciones de parámetros. No existe evidencia de coordinación entre distintas sesiones/usuarios Windows, ni de exclusividad ligada a una instancia de motor real, ni de compatibilidad con ACL de un servicio operativo. Aun adquiriendo un mutex, debe ejecutarse un censo independiente del motor/puertos y verificarse identidad, proceso y Job Object antes de arrancar. **Activación operativa NO AUTORIZADA**.
