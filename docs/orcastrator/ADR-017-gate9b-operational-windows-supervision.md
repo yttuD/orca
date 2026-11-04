@@ -472,3 +472,11 @@ Queda definido el documento arquitectónico `docs/orcastrator/ORCA-D02-GATE9B-C4
 Contrato fuente de la decisión: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
 
 **C4-A candidato, 22 tests NOT_RUN:** `src/main/ipc/managed-supervised-recovery-diagnostic.ts` y su suite `.test.ts`. Proyección pura de evidencia sintética/no confiable hacia un DTO de estado exclusivamente `BLOCKED` y `startupAllowed:false`; conserva `UNKNOWN` ante observaciones antiguas o ausentes, no expone secretos/rutas ni invoca Windows/IPC/motores. No confundir una etiqueta de fuente `MAIN_NATIVE_CLAIM` con una atestación; no se integra aún con renderer o motor. QA previo `pnpm.cmd run tc:node` y Vitest de esta suite nueva; criterio 22/22 Windows antes de pasar a C4-B.
+
+## Gate 9B-C4-A — Windows 22/22 PASS; siguiente C4-B1 de procedencia (2026-11-04)
+
+El operador aportó Vitest **1 archivo / 22 pruebas PASS**, **479 ms**, sentinel `GATE 9B-C4A SUPERVISED RECOVERY DIAGNOSTIC QA: PASS`, inicio 11:53:07 local. C4-A valida únicamente la proyección pura de un diagnóstico que bloquea arranque, no adquisición de sensores reales.
+
+Tras confirmar recuperación supervisada para el MVP, se preparó `src/main/ipc/managed-supervised-recovery-provenance.ts` y una suite de 22 tests `managed-supervised-recovery-provenance.test.ts` **NOT_RUN**. C4-B1 valida coherencia sintética entre identidad/captura de lease, listener y proceso registrado, frescura de cada observación y que los censos fueron posteriores al lease; cualquier anomalía degrada a UNKNOWN. Una declaración `MAIN_NATIVE_CLAIM` sigue siendo **inverificable como origen** hasta que un recolector nativo real y acotado la produzca. Todos los resultados contienen `BLOCKED`, `startupAllowed:false`, `UNATTESTED_CLAIMS_ONLY`.
+
+El runbook se encuentra en el repo motor `docs/QA/ORCA-D02-GATE9B-C4B1-CLAIM-PROVENANCE-QA.md`. Próximo QA: TypeScript y **2 archivos / 44 pruebas** (22 C4-A + 22 C4-B1) sin recompilar C++. No activar IPC operativo, servicios Windows, GitHub Actions ni merges.
