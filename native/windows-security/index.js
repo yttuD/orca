@@ -32,6 +32,8 @@ module.exports = {
   acquireManagedMotorLease: (motorIdentitySha256) =>
     getAddon().acquireManagedMotorLease(motorIdentitySha256),
   inspectManagedQaTcpListeners: (port) => getAddon().inspectManagedQaTcpListeners(port),
+  inspectManagedQaRecordedProcess: (pid, ticks) =>
+    getAddon().inspectManagedQaRecordedProcess(pid, ticks),
   // Reads the binding this package resolved, so a build probe tests the binary the app loads.
   hasNativeExport: (name) => typeof getAddon()[name] === 'function'
 }
