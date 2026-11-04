@@ -100,6 +100,13 @@ bool MatchesCreatedAcl(HANDLE mutex, PSECURITY_DESCRIPTOR expected) {
   return same;
 }
 
+// Node-API type tags prevent a forged JS prototype chain (or a different
+// native ObjectWrap with its prototype changed) from being interpreted as a
+// ManagedMotorLease when we unwrap its native pointer.
+constexpr napi_type_tag kManagedMotorLeaseTypeTag{
+  0x53f41a69599e4b37ULL, 0xa1354a8bacd3d198ULL
+};
+
 class ManagedMotorLease final : public Napi::ObjectWrap<ManagedMotorLease> {
  public:
   explicit ManagedMotorLease(const Napi::CallbackInfo& info)
@@ -119,6 +126,9 @@ class ManagedMotorLease final : public Napi::ObjectWrap<ManagedMotorLease> {
                               std::string digest, uint64_t creation) {
     auto instance = Constructor().New({});
     if (env.IsExceptionPending()) return Napi::Object::New(env);
+    if (napi_type_tag_object(env, instance, &kManagedMotorLeaseTypeTag) != napi_ok) {
+      return Napi::Object::New(env);
+    }
     auto* lease = Unwrap(instance);
     if (!lease) return Napi::Object::New(env);
     lease->mutex_ = handle;
@@ -148,9 +158,11 @@ class ManagedMotorLease final : public Napi::ObjectWrap<ManagedMotorLease> {
     const std::string expectedDigest = info[1].As<Napi::String>().Utf8Value();
     if (!ValidDigest(expectedDigest)) return denied();
 
-    bool instance = false;
-    if (napi_instanceof(env, info[0], Constructor().Value(), &instance) != napi_ok ||
-        !instance) {
+    bool nativeTypeMatches = false;
+    if (napi_check_object_type_tag(env, info[0],
+                                   &kManagedMotorLeaseTypeTag,
+                                   &nativeTypeMatches) != napi_ok ||
+        !nativeTypeMatches) {
       return denied();
     }
     void* raw = nullptr;
