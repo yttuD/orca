@@ -137,6 +137,9 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     inspectManagedQaTcpListeners: () => {
       throw new Error('inspectManagedQaTcpListeners is not faked')
     },
+    inspectManagedQaRecordedProcess: () => {
+      throw new Error('inspectManagedQaRecordedProcess is not faked')
+    },
     isolatedSpawnBreaksAwayFromJob: () => true,
     hasNativeExport: () => true,
     getDaclAces: (addonPath) => {
