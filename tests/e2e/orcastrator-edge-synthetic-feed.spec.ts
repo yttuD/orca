@@ -84,10 +84,15 @@ test('hidden Electron authenticates with a synthetic loopback feed', async ({
 
   const managed = orcaPage.getByRole('button', { name: 'Proyectos Gestionados' })
   await expect(managed).toHaveCount(1)
-  const online = orcaPage.getByText('Feed WCB activo', { exact: true })
-  if (!(await online.isVisible())) {
+  // The feed can still show its previous state while the 15s UI poll catches up.
+  // Never toggle the popover based on the ONLINE label: if it is already open,
+  // clicking the trigger would CLOSE the panel and make the assertion time out.
+  const panelTitle = orcaPage.getByText('Proyectos Gestionados', { exact: true })
+  if (!(await panelTitle.isVisible())) {
     await managed.click()
   }
+  await expect(panelTitle).toBeVisible()
+  const online = orcaPage.getByText('Feed WCB activo', { exact: true })
   await expect(online).toBeVisible({ timeout: 25000 })
   await expect(orcaPage.getByText(String(syntheticFeed.port), { exact: true }))
     .toBeVisible({ timeout: 25000 })
