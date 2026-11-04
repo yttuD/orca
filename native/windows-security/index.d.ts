@@ -175,3 +175,37 @@ export type ManagedMotorLeaseAcquireResult =
 export declare function acquireManagedMotorLease(
   motorIdentitySha256: string
 ): ManagedMotorLeaseAcquireResult
+
+
+/** C3-B, diagnostic QA only. Never expose executablePath to a renderer. */
+export type ManagedQaListenerIdentity = {
+  readonly family: 'IPv4' | 'IPv6'
+  readonly pid: number
+  /** Win32 process creation FILETIME ticks as decimal string, or null. */
+  readonly creationTimeTicks: string | null
+  /** Internal path returned by Windows; null if access denied or process exited. */
+  readonly executablePath: string | null
+  readonly identityVerified: boolean
+}
+
+export type ManagedQaListenerCensus =
+  | {
+      readonly status: 'NO_LISTENER' | 'LISTENER_PRESENT'
+      readonly port: number
+      readonly listeners: readonly ManagedQaListenerIdentity[]
+    }
+  | {
+      readonly status: 'UNKNOWN'
+      readonly port: number
+      readonly reason: 'TCP_TABLE_UNAVAILABLE' | 'TCP_TABLE_INCONSISTENT'
+      readonly listeners: readonly []
+    }
+
+/**
+ * Windows-only read-only snapshot of IPv4 AND IPv6 listening TCP rows by PID.
+ * Gate C3 test-only; rejects reserved operational/WCB ports.
+ * This checks ONLY socket listeners: no result proves absence of an orphan
+ * motor or Job Object. Keep the real lease and revalidate atomically at bind.
+ * A returned UNKNOWN or identityVerified=false always blocks admission.
+ */
+export declare function inspectManagedQaTcpListeners(port: number): ManagedQaListenerCensus
