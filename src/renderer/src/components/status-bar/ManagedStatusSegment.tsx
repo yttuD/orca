@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ManagedEdgeBridgeHealth } from './ManagedEdgeBridgeHealth'
 import {
   ManagedProjectRow,
   type ManagedProject,
@@ -249,14 +250,16 @@ export function ManagedStatusSegment({
             </div>
           </div>
 
+          <ManagedEdgeBridgeHealth />
+
           <div className="rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1.5 text-[11px] text-sky-300">
             <div className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="size-3.5 text-sky-400 shrink-0" />
-              <span>Modo Solo Lectura M0 (Solo Proyecciones)</span>
+              <span>Gestión Desktop con autorización local</span>
             </div>
             <p className="mt-0.5 text-[10px] text-sky-300/80">
-              Autoridad exclusiva en el motor Python (127.0.0.1:8765) con autenticación local. Cero
-              inferencias ni mutaciones desde la interfaz.
+              El motor Python (127.0.0.1:8765) conserva la autoridad. Consultas y acciones
+              gestionadas requieren validación y autorización local; el feed Edge es solo lectura.
             </p>
           </div>
 
