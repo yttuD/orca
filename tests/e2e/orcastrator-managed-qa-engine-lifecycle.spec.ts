@@ -47,7 +47,8 @@ test('Desktop owns and recovers a disposable FastAPI child, then stops only its 
   const panelTitle = orcaPage.getByText('Proyectos Gestionados', { exact: true })
   if (!(await panelTitle.isVisible())) await panel.click()
   await expect(orcaPage.getByText('Orcastrator Gate 7 Real FastAPI QA', { exact: true })).toBeVisible()
-  await expect(orcaPage.getByText('Motor QA administrado: ONLINE', { exact: true })).toBeVisible()
+  await orcaPage.getByTitle('Actualizar estado').click()
+  await expect(orcaPage.getByText('Motor QA administrado: ONLINE', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   // Only the test-owned child is terminated. The supervisor must observe the
   // process exit, invalidate its old endpoint and recover at most twice.
