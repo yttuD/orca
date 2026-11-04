@@ -8,6 +8,7 @@
 #include <wincred.h>
 
 #include "isolated-spawn.h"
+#include "managed-job-process.h"
 
 #include <functional>
 #include <cstring>
@@ -552,6 +553,9 @@ Napi::Value ClearStdHandleInheritance(const Napi::CallbackInfo& info) {
 }  // namespace
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  InitializeManagedJobProcess(env);
+  exports.Set("spawnManagedJobContained",
+              Napi::Function::New(env, SpawnManagedJobContained));
   exports.Set("currentUserSid", Napi::Function::New(env, CurrentUserSid));
   exports.Set("getDaclAces", Napi::Function::New(env, GetDaclAces));
   exports.Set("readFileWithDacl", Napi::Function::New(env, ReadFileWithDacl));
