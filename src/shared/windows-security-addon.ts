@@ -126,6 +126,7 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
         ),
       acquireManagedMotorLease: (motorIdentitySha256) =>
         raw.acquireManagedMotorLease(motorIdentitySha256),
+      inspectManagedQaTcpListeners: (port) => raw.inspectManagedQaTcpListeners(port),
       isolatedSpawnBreaksAwayFromJob: () => raw.isolatedSpawnBreaksAwayFromJob(),
       hasNativeExport: (name) => raw.hasNativeExport(name)
     }
