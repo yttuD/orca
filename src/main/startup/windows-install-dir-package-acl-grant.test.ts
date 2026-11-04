@@ -45,6 +45,7 @@ function installFakeAddon(
     spawnDetachedIsolated: unexpected,
     // Security: ACL mocks must never be able to launch a native job child.
     spawnManagedJobContained: unexpected,
+    closeRecordedManagedJobIfEmptyForQa: unexpected,
     acquireManagedMotorLease: unexpected,
     verifyManagedMotorLeaseOwnerForQa: unexpected,
     inspectManagedQaTcpListeners: unexpected,
