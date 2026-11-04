@@ -183,3 +183,45 @@ del Gate 9B-C.
 ## Gate 9B-C2 — Protección contra doble instancia (pendiente)
 
 Diseño requerido: exclusión entre procesos Windows, con recurso exclusivo cuyo ciclo de vida esté asociado al proceso propietario y se libere si éste desaparece inesperadamente. La primera validación debe ser íntegramente sintética en los clones QA: dos procesos compitiendo, rechazo del segundo, liberación al cierre del primero, liberación tras caída y rechazo si la titularidad es incierta. En producción no bastará la exclusión: el arranque también exige preflight de procesos incumbentes, identidad de instalación y perfil, autorización local en Electron main, raíz de datos aislada y verificación de puertos ajenos. Hasta entonces no habilitar arranque del motor operativo.
+
+## Gate 9B-C2 — Contrato comprobable de lease específico del motor (2026-11-04)
+
+**Situación:** el contrato puro y tests están implementados en rama; la adquisición nativa real continúa bloqueada y NO IMPLEMENTADA. Nunca conectar el contrato a un IPC o flujo de arranque operativo.
+
+### Reutilización de mecanismos existentes y límites
+
+- `src/main/startup/single-instance-lock.ts`: Electron `requestSingleInstanceLock()` previene duplicados dentro de un perfil visual, pero perfiles separados no comparten necesariamente la exclusión del mismo motor.
+- `src/main/startup/desktop-profile-instance-lock.ts` y `src/main/orcad/orcad-instance-lock.ts`: `orcad.lock` protege el acceso concurrente a la raíz de datos de Orca. No constituye por sí mismo la propiedad de un *motor Orcastrator* identificado por instalación y servicio. Además, el startup Desktop trata otros errores como `unavailable` y conserva el arranque heredado, lo que no puede reutilizarse como política de admisión del motor.
+- `src/main/managed-server/activation/orcad-activation-lock.ts`: el fencing remoto de `orcad` tiene otra responsabilidad; no sustituye exclusión local del servidor Python.
+
+### Criterios del lease que deberá proporcionar el componente nativo
+
+1. Debe cubrir **todas las instancias y perfiles que puedan alcanzar el mismo motor Windows**, incluso sesiones de inicio de sesión distintas. El alcance de una única sesión o perfil es insuficiente.
+2. Identidad canónica de motor: combinación estable de instalación, identificador de motor y destino de servicio; derivar un SHA-256 sin incluir rutas secretas ni identificadores personales en logs.
+3. Exclusión atómica, acceso restringido al propietario autorizado, **handle de titularidad** mantenido abierto desde antes de iniciar el proceso hasta confirmar su retiro. No usar `process.pid` como prueba suficiente.
+4. La prueba de dueño incluye generación, creación de proceso Windows en ticks de 100 ns (string), identidad Win32 verificable y vínculo con el Job Object que contiene al motor.
+5. `HELD_BY_OTHER` bloquea sin intentar terminar, adoptar o inspeccionar secretos del competidor. `UNKNOWN` y errores de permisos también bloquean.
+6. `ABANDONED` **no equivale a libre**: requiere reconciliación independiente del listener, Job Object y procesos remanentes, con veredicto explícito y nueva generación antes de iniciar. Microsoft documenta que el recurso protegido por un mutex abandonado queda en estado potencialmente indeterminado.
+7. Bajo el lease recién adquirido se vuelve a realizar un **censo posterior de procesos/puerto**; un servicio anterior, aunque sea propio, obliga a detener la admisión y escalar a recuperación controlada. El snapshot anterior al lease no basta por la carrera TOCTOU.
+8. Un cierre intencional solo libera la titularidad al terminar el árbol propio; un cierre abrupto debe causar liberación del objeto nativo pero **nunca habilitar arranque automático sin reconciliación**.
+9. Prohibido usar `orcad.lock` como sustituto, forzar liberaciones por nombre de proceso/PID o tocar WCB y otras instalaciones. No hay permisos de arranque de producción en esta fase.
+
+Microsoft: `CreateMutexExW` advierte sobre el riesgo de apropiación previa del nombre; `Mutex Objects` explica el resultado `WAIT_ABANDONED` y el estado indeterminado del recurso. Referencias:
+https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexexw
+https://learn.microsoft.com/en-us/windows/win32/sync/mutex-objects
+
+### Artefactos de contrato seguros publicados
+
+- `src/main/ipc/managed-engine-lease-qualification.ts`: política **pura**, sin adquisición de mutex/archivo, sin procesos, IPC o acceso a puertos. Rechaza fuentes Electron/`orcad.lock`/filesystem, alcance solo sesión, competencia, abandono, titularidad/ACL/identidad no verificadas, falta de Job Object o censo posterior desconocido. El máximo resultado posible `READY_FOR_ISOLATED_NATIVE_QA` es informativo para pruebas, NO autorización de despliegue ni de inicio del motor.
+- `src/main/ipc/managed-engine-lease-qualification.test.ts`: escenarios de rechazo y candidato sintético completo. Todas las declaraciones del test son ficticias: no comprueban exclusividad real entre procesos. Pruebas **NOT_RUN** hasta evidencia Windows.
+
+### Pruebas posteriores antes de instalar implementación nativa
+
+- Dos procesos **distintos** deben competir por la misma identidad de motor: uno obtiene titularidad, otro es rechazado; repetir en perfiles Orca diferentes.
+- Cambiar la identidad canónica permite titulares de motores distintos, sin colisiones ni invasión de sesiones.
+- Liberación tras cierre normal y tras caída forzada del proceso poseedor. Ante abandono se requiere reconciliación, sin promoción automática a `READY`.
+- Probar mutex creado previamente por tercero, ACL insuficiente, propietario imposible de identificar, PID reciclado, proceso con mismo ejecutable pero otro Job Object y servicio con puerto ocupado.
+- Cierre inesperado mientras FastAPI queda en fase transitoria y abandono entre adquisición del lease y asociación del Job Object; nunca arrancar dos instancias.
+- Registrar evidencia de que WCB y cualquier motor previo siguen vivos e inalterados.
+
+**Gate 9B-C2 = CONTRATO PREPARADO / LEASE NATIVO NO IMPLEMENTADO / TESTS NO EJECUTADOS.** Mantener ambos PR DRAFT y el arranque operativo deshabilitado.
