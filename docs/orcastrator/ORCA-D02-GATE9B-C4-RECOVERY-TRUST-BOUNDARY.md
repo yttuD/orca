@@ -114,3 +114,10 @@ Próximo QA: ejecutar TypeScript y las cuatro suites C4-A (22), B1 (22), B2-A (8
 
 
 **Matiz de efectos en disco (QA):** el lector del journal no escribe ni repara su payload, pero durante la validación del directorio temporal puede reforzar la DACL mediante `restrictWindowsPathSync`. Esa modificación de permisos se limita a la raíz TEMP desechable del test; por tanto no se presenta como una operación de filesystem estrictamente sin efectos. No modifica WCB ni motor operativo.
+
+
+## Evidencia Windows C4-B2-B — PASS (2026-11-04)
+
+El operador entregó Vitest v5.0.5 desde el clon `D:/Programacion-Cosas/ORCASTRATOR-DESKTOP-QA/orca`: **4 archivos / 60 pruebas PASS**, duración **1,69 s**, inicio 12:21:21 local; marcador exacto `GATE 9B-C4B2B SUPERVISED QA REVIEW PACKET: PASS`. Este resultado confirma la suite sintética de paquete de revisión supervisada que mantiene separadas la observación nativa del proceso QA actual y la cuarentena histórica. El mensaje presentado muestra la ejecución de Vitest, no un nuevo log independiente de TypeScript o MSVC.
+
+**C4-B2-B PASS únicamente en QA.** El propietario histórico y los descendientes de un Job Object privado anterior siguen sin atestación; el resultado sigue `BLOCKED`, `startupAllowed:false`. Próximo paso C4-C: representación en Electron de datos sanitizados, sin habilitar arranque ni acciones sobre procesos. Sin acceso a WCB, FastAPI productivo, GitHub Actions ni merges.
