@@ -122,7 +122,7 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
       // No renderer IPC and no production motor startup is wired here.
       spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
         raw.spawnManagedJobContained(
-          toNamespacedPath(file), commandLine, toNamespacedPath(cwd), environmentBlock
+          file, commandLine, cwd, environmentBlock
         ),
       isolatedSpawnBreaksAwayFromJob: () => raw.isolatedSpawnBreaksAwayFromJob(),
       hasNativeExport: (name) => raw.hasNativeExport(name)
