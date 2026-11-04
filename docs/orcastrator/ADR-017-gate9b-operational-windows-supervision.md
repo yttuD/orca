@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A POLICY PASS (18/18 WINDOWS); GATE 9B-B NATIVO PASS (2/2 WINDOWS); GATE 9B-C PENDIENTE; ACTIVACIÓN OPERATIVA BLOQUEADA
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 PENDIENTE; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -160,7 +160,7 @@ El operador informó `tc:node` PASS en 19.597 archivos (15,29 s), `node-gyp 12.3
 
 Este PASS es de `job.close()` explícito sobre procesos QA sintéticos. **No es todavía prueba de caída del dueño, lease de instancia única ni aprobación de arranque operativo.**
 
-## Gate 9B-C1 — Caída de propietario del Job Object (CANDIDATO, NOT_RUN)
+## Gate 9B-C1 — Caída de propietario del Job Object (WINDOWS PASS 2026-11-04)
 
 En el fork Orca se agregaron `tests/fixtures/orca-gate9c-job-owner.cjs` y
 `src/main/ipc/managed-job-owner-crash-windows.test.ts`.
@@ -173,11 +173,13 @@ procesos contenidos terminen. Simultáneamente comprueba que otro
 proceso sintético independiente, con el mismo ejecutable, permanece
 vivo. Nunca mata por PID ni descubre servicios del host.
 
-**Esta prueba NO SE HA EJECUTADO EN WINDOWS.** Requiere el addon nativo
-compilado en el clon QA. El test no toca FastAPI, WCB, los puertos
-8765/8768/8769, ni secretos del motor.
+**Evidencia Windows:** `tc:node` PASS (19.598 archivos, 12,30 s), Vitest de `managed-job-native-windows.test.ts` y `managed-job-owner-crash-windows.test.ts` **3/3 PASS** en dos archivos (812 ms), mensaje `GATE 9B-C1 WINDOWS QA: PASS`. Las advertencias de Vite fueron no bloqueantes. El test no toca FastAPI, WCB, los puertos 8765/8768/8769 ni secretos del motor.
 
 Una aprobación 9B-C1 no certificará lease exclusivo, no adopción de
 incumbentes, integridad de instalación, aprobación local ni disposición
 para iniciar el motor operativo. Se desarrollarán en fases posteriores
 del Gate 9B-C.
+
+## Gate 9B-C2 — Protección contra doble instancia (pendiente)
+
+Diseño requerido: exclusión entre procesos Windows, con recurso exclusivo cuyo ciclo de vida esté asociado al proceso propietario y se libere si éste desaparece inesperadamente. La primera validación debe ser íntegramente sintética en los clones QA: dos procesos compitiendo, rechazo del segundo, liberación al cierre del primero, liberación tras caída y rechazo si la titularidad es incierta. En producción no bastará la exclusión: el arranque también exige preflight de procesos incumbentes, identidad de instalación y perfil, autorización local en Electron main, raíz de datos aislada y verificación de puertos ajenos. Hasta entonces no habilitar arranque del motor operativo.
