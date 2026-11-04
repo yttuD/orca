@@ -6,3 +6,4 @@
 // No process launch, no service adoption, no production authorization.
 void InitializeManagedMotorLease(Napi::Env env);
 Napi::Value AcquireManagedMotorLease(const Napi::CallbackInfo& info);
+Napi::Value VerifyManagedMotorLeaseOwnerForQa(const Napi::CallbackInfo& info);
