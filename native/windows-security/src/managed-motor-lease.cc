@@ -206,6 +206,7 @@ Napi::Value AcquireManagedMotorLease(const Napi::CallbackInfo& info) {
 
   // Create atomically with ownership, never wait on existing objects.
   // Existing names (including abandoned or name-squatted ones) are BLOCKED.
+  SetLastError(ERROR_SUCCESS);
   HANDLE mutex = CreateMutexExW(&attributes, name.c_str(),
                                  CREATE_MUTEX_INITIAL_OWNER,
                                  MUTEX_ALL_ACCESS);
