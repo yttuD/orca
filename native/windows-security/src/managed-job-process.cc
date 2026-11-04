@@ -56,7 +56,7 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
   explicit ManagedJobProcess(const Napi::CallbackInfo& info)
       : Napi::ObjectWrap<ManagedJobProcess>(info) {}
 
-  ~ManagedJobProcess() override { CloseOwned(); }
+  ~ManagedJobProcess() { CloseOwned(); }
 
   static void Initialize(Napi::Env env) {
     auto type = DefineClass(env, "ManagedJobProcess", {
