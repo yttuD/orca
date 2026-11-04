@@ -47,6 +47,7 @@ function installFakeAddon(
     spawnManagedJobContained: unexpected,
     acquireManagedMotorLease: unexpected,
     inspectManagedQaTcpListeners: unexpected,
+    inspectManagedQaRecordedProcess: unexpected,
     isolatedSpawnBreaksAwayFromJob: unexpected,
     hasNativeExport: unexpected,
     grantAccessAsync: async (path, sid, accessMask, options) => {
