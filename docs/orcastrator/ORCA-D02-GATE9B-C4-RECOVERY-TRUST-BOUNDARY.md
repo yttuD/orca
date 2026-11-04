@@ -111,3 +111,6 @@ Se prepararon (sin ejecutar aún) `src/main/ipc/managed-qa-supervised-review-pac
 **Importante:** Esta es una etapa de *ensamblado de diagnóstico* para revisión humana, NO un sensor de propietario anterior ni una solución a la brecha C4-B2-B de obtención de atestación histórica. No se integra aún al IPC/renderer real. La imposibilidad de reabrir un Job Object privado anónimo después de la caída sigue sin resolverse.
 
 Próximo QA: ejecutar TypeScript y las cuatro suites C4-A (22), B1 (22), B2-A (8), B2-B (8) en Windows QA limpio. **Esperado únicamente si pasan: 4 archivos / 60 pruebas PASS.** No requiere rebuild C++ ni toca WCB, motor operativo, puerto 8765, GitHub Actions o merges.
+
+
+**Matiz de efectos en disco (QA):** el lector del journal no escribe ni repara su payload, pero durante la validación del directorio temporal puede reforzar la DACL mediante `restrictWindowsPathSync`. Esa modificación de permisos se limita a la raíz TEMP desechable del test; por tanto no se presenta como una operación de filesystem estrictamente sin efectos. No modifica WCB ni motor operativo.
