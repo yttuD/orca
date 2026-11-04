@@ -17,16 +17,16 @@ import type {
 function parseManagedChecks(value: unknown): ManagedCheckDTO[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((raw: unknown) => {
-    if (!raw || typeof raw !== 'object') return []
-    const check = raw as Record<string, unknown>
-    if (typeof check.name !== 'string' || typeof check.status !== 'string') return []
-    const exitCode = check.exit_code
+    if (!raw || typeof raw !== 'object' ||
+        !('name' in raw) || !('status' in raw) ||
+        typeof raw.name !== 'string' || typeof raw.status !== 'string') return []
+    const exitCode = 'exit_code' in raw ? raw.exit_code : undefined
     return [{
-      name: check.name,
-      status: check.status,
-      ...(typeof exitCode === 'number' && Number.isFinite(exitCode) || exitCode === null
-        ? { exit_code: exitCode as number | null }
-        : {})
+      name: raw.name,
+      status: raw.status,
+      ...(typeof exitCode === 'number' && Number.isFinite(exitCode)
+        ? { exit_code: exitCode }
+        : exitCode === null ? { exit_code: null } : {})
     }]
   })
 }
@@ -160,6 +160,11 @@ export async function fetchManagedEvidenceFromEngine(
     attempt_id: typeof rawEv.attempt_id === 'string' ? rawEv.attempt_id : null,
     evidence_status:
       (rawEv.evidence_status as ManagedEvidenceDTO['evidence_status']) || 'NOT_FOUND',
+    provenance: String(rawEv.provenance || 'UNVERIFIED'),
+    hash_status: String(rawEv.hash_status || 'NOT_RUN'),
+    checks_summary: rawEv.checks_summary && typeof rawEv.checks_summary === 'object'
+      ? (rawEv.checks_summary as ManagedEvidenceDTO['checks_summary'])
+      : undefined,
     execution_mode: String(rawEv.execution_mode || 'REAL'),
     is_synthetic: Boolean(rawEv.is_synthetic),
     checks: parseManagedChecks(rawEv.checks),
