@@ -458,3 +458,9 @@ Próximo QA: `pnpm.cmd run tc:node` y Vitest con las cinco suites E-D anteriores
 El operador aportó salida de Vitest 5.0.5 desde el worktree aislado `ORCASTRATOR-DESKTOP-QA/orca`: **6 archivos PASS / 38 pruebas PASS**, duración **2,41 s**, inicio a las 11:35:00 (hora local), marcador exacto `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. Los escenarios de integridad, rollback y falsificación de checksum fueron aprobados en el alcance sintético. La salida transcripta no muestra una nueva compilación C++ ni salida de typecheck, no se declaran verificaciones extra a partir de ella.
 
 **C3-E-E PASS EN QA**, sin permiso de arranque. El resultado valida que el clasificador *de QA* siempre devuelve bloqueo al leer cualquier journal histórico no autenticado. No valida recuperación operacional, custodia de una clave exclusiva ni censo histórico de Job Objects privados. No convertir este resultado en `ATTESTED` ni en autorización para FastAPI.
+
+## Hito C3-E-E completado; transición a decisión C4 (2026-11-04)
+
+Gate C3-E-E fue revalidado por el operador: Vitest 6 archivos/38 pruebas PASS, 2,41 s, marcador `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. **No interpretar** el PASS como recuperación automática o confianza histórica.
+
+Queda definido el documento arquitectónico `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`: elección provisional de **recuperación supervisada y bloqueante tras crash** para MVP; un supervisor Windows con identidad separada se pospone a decisión explícita. No deben añadirse más fuentes de autorización basadas en SHA-256 no autenticado del mismo archivo; C4 prioriza diagnósticos read-only y una fuente de confianza real antes de nuevos lanzamientos.
