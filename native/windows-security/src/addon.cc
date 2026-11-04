@@ -564,6 +564,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, InspectManagedQaTcpListeners));
   exports.Set("acquireManagedMotorLease",
               Napi::Function::New(env, AcquireManagedMotorLease));
+  exports.Set("verifyManagedMotorLeaseOwnerForQa",
+              Napi::Function::New(env, VerifyManagedMotorLeaseOwnerForQa));
   exports.Set("spawnManagedJobContained",
               Napi::Function::New(env, SpawnManagedJobContained));
   exports.Set("currentUserSid", Napi::Function::New(env, CurrentUserSid));
