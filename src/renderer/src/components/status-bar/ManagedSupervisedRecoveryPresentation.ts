@@ -124,3 +124,55 @@ export function describeSupervisedRecoveryForRenderer(raw: unknown): RecoveryPre
     footnote: 'Diagnóstico de pruebas sin atestación histórica. Requiere revisión técnica; no permite iniciar ni terminar motores.'
   }
 }
+
+
+/**
+ * C4-C-B: presentation of an EXISTING, guarded Electron-main QA lifecycle
+ * snapshot, not a B2-B native lease/Job Object attestation. Only allowlisted
+ * fixed labels; never repeat error_code, port, process paths, or secrets.
+ * Data is not an operational recovery capability and is not sufficient to
+ * claim the owner or any historical process is absent.
+ */
+const QA_PHASES = {
+  STOPPED: 'Detenido',
+  STARTING: 'Iniciando',
+  ONLINE: 'En línea',
+  DEGRADED: 'Degradado',
+  RECOVERING: 'En transición de prueba',
+  ERROR: 'Error',
+  STOPPING: 'Deteniéndose'
+} as const
+
+export type QaLifecyclePresentation = {
+  readonly state: 'NO_QA_SNAPSHOT' | 'QA_LIFECYCLE_CLAIM_ONLY'
+  readonly label: string
+  readonly authority: 'UNATTESTED_LIFECYCLE_ONLY'
+  readonly startupAllowed: false
+}
+
+export function describeQaLifecycleForRenderer(raw: unknown): QaLifecyclePresentation {
+  const value = object(raw)
+  const phase = value?.phase
+  const owner = value?.owner
+  if (typeof phase !== 'string' ||
+      !Object.prototype.hasOwnProperty.call(QA_PHASES, phase) ||
+      (owner !== 'NONE' && owner !== 'THIS_ELECTRON') ||
+      (phase === 'ONLINE' && owner !== 'THIS_ELECTRON')) {
+    return {
+      state: 'NO_QA_SNAPSHOT',
+      label: 'Sin estado QA confiable de la sesión actual',
+      authority: 'UNATTESTED_LIFECYCLE_ONLY',
+      startupAllowed: false
+    }
+  }
+  return {
+    state: 'QA_LIFECYCLE_CLAIM_ONLY',
+    label: 'Ciclo QA de Electron: ' +
+      (QA_PHASES[phase as keyof typeof QA_PHASES] ?? 'Desconocido') +
+      (owner === 'THIS_ELECTRON'
+        ? ' · proceso declarado propio'
+        : ' · sin proceso declarado'),
+    authority: 'UNATTESTED_LIFECYCLE_ONLY',
+    startupAllowed: false
+  }
+}
