@@ -403,3 +403,8 @@ Investigación: Node/libuv bajo Windows suele asociar procesos hijos **sin** `de
 Corrección **solo del test** en `src/main/ipc/managed-job-clean-close-windows.test.ts`: commits `35f2ec5e813162eb0db36bdba7a256654ad25ecd` y `7e4d0e48693afc4ba31c6afddb02408cb8994f4e`. El fixture ahora genera un descendiente `Node -e` con `detached: true`, `stdio: 'ignore'` y `unref()`; exige un archivo `grandchild-ready` escrito por el propio descendiente **y** contador del Job Object original `rootRunning && activeProcesses >= 2`. Espera otros 250 ms para descartar una pertenencia transitoria. Solo entonces ordena la salida de la raíz mediante señal de archivo privada y exige nuevamente `!rootRunning && activeProcesses >= 1` **antes** de verificar `DESCENDANTS_STILL_RUNNING`. Si el proceso no permanece dentro del Job Object, la prueba sigue fallando y conserva diagnóstico de snapshot.
 
 Estado: **Gate 9B-C3-E-C NOT PASS / RETEST_REQUIRED**. No cambiaron C++ ni el método de cierre. El addon nativo anterior puede reutilizarse; repetir TypeScript y las cuatro suites Vitest, esperar **23/23** antes de aprobar. WCB y FastAPI operativos intactos, sin GitHub Actions ni merge.
+
+
+### Gate C3-E-C — Verificación final Windows PASS (2026-11-04)
+
+Tercer ensayo tras el arreglo del fixture Node detached: el operador presentó Vitest **4 archivos / 23 pruebas PASS**, duración **1,76 s**, marcador `GATE 9B-C3E CLEAN JOB CLOSE QA: PASS` y hora de inicio de suite 11:04:39 local. Se considera **PASS en QA** el contrato de cierre del Job Object privado con raíz y descendientes sintéticos. El fragmento es de Vitest; no incluye salida nueva de MSVC ni `tc:node`. La prueba no autoriza un arranque de FastAPI y no acredita un journal histórico firmado ni recuperación de crash.
