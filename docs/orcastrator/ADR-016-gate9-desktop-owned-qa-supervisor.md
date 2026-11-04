@@ -1,7 +1,7 @@
 # ADR-016 — Gate 9A: supervisor de FastAPI propiedad del Desktop (solo QA)
 
 Fecha: 2026-11-04
-Estado: IMPLEMENTADO EN RAMA; PENDIENTE DE PRUEBAS FÍSICAS WINDOWS
+Estado: GATE 9A PASS EN WINDOWS (2026-11-04); GATE 9B NO IMPLEMENTADO
 
 ## Contexto
 
@@ -72,8 +72,16 @@ fallo cerrado; no hace fallback al puerto operativo 8765.
   del proceso hijo propio, recuperación autónoma, cierre y ausencia de
   reinicio posterior. La prueba exige Windows y QA checkout local.
 
-**No hay evidencia PASS todavía en Gate 9A.** Solo se reportará PASS
-después del resultado de Windows. Ninguna GitHub Action; PR DRAFT.
+**Evidencia Gate 9A PASS (Windows, 2026-11-04):** el operador ejecutó
+`tests/e2e/orcastrator-managed-qa-engine-lifecycle.spec.ts` en
+`electron-headless` con `1 passed (1.2m)`, caso 24,5 segundos, build
+Electron 19,02 segundos y CLI sin errores de tipos en 3.532 archivos.
+La prueba aprobó arranque de Python QA desde Electron, UI con proyecto
+sintético, caída inyectada, recuperación automática, stop controlado y
+sin reinicio posterior. El repositorio temporal E2E fue limpiado.
+
+Esto **no** demuestra seguridad del Job Object del árbol de procesos
+ni autoriza arranque operativo. Ninguna GitHub Action; PR DRAFT.
 
 ## Limitaciones
 
