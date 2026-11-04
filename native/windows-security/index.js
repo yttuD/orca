@@ -27,6 +27,8 @@ module.exports = {
   spawnDetachedIsolated: (file, commandLine, cwd, environmentBlock, onExit) =>
     getAddon().spawnDetachedIsolated(file, commandLine, cwd, environmentBlock, onExit),
   isolatedSpawnBreaksAwayFromJob: () => getAddon().isolatedSpawnBreaksAwayFromJob(),
+  spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
+    getAddon().spawnManagedJobContained(file, commandLine, cwd, environmentBlock),
   // Reads the binding this package resolved, so a build probe tests the binary the app loads.
   hasNativeExport: (name) => typeof getAddon()[name] === 'function'
 }
