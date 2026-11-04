@@ -5,9 +5,11 @@
  * Historic C3-E journal bytes are deliberately UNATTESTED, even when the
  * hash is valid and phase is CLEAN_STOP. No positive recovery decision.
  *
- * Not exported through IPC/preload or renderer. No filesystem or network
- * access except the existing QA-only read of the disposable journal and the
- * native self-observation over an existing owned server/mutex handle.
+ * Not exported through IPC/preload or renderer. No motor or network
+ * actions. The journal reader does not change record payloads, but its
+ * QA-root preflight may RESTRICT the disposable directory's Windows ACL;
+ * this is not a completely side-effect-free filesystem operation.
+ * The native self-observation uses only an existing owned server/mutex.
  */
 import type { Server } from 'node:net'
 import type { ManagedMotorLeaseHandle } from '../../../native/windows-security'
