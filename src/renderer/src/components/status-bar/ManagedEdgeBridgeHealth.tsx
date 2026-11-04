@@ -41,7 +41,7 @@ export function ManagedEdgeBridgeHealth(): React.JSX.Element {
       </div>
       <div className="flex items-center gap-1 text-muted-foreground font-mono">
         <Cable className="size-3" />
-        <span>8768</span>
+        <span>{health?.port ?? 8768}</span>
         {active && health?.latest_seq !== undefined
           ? <span>· seq {health.latest_seq}</span>
           : null}
