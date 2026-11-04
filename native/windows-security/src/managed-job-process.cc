@@ -51,6 +51,12 @@ void CloseOnLaunchFailure(HANDLE job, PROCESS_INFORMATION* created) {
 // ObjectWrap owns the ONLY private unnamed job handle. Job is destroyed and
 // contained processes killed on explicit close, GC or main process death.
 // Never expose a raw HANDLE or a constructor usable from untrusted JS.
+// Type-tagged native Job Object: a copied JS prototype is never evidence of
+// a retained Windows Job Object handle. Never expose the raw handle.
+constexpr napi_type_tag kManagedJobProcessTypeTag{
+  0x289a7bcc21c44ce4ULL, 0xb35bc61429558aafULL
+};
+
 class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
  public:
   explicit ManagedJobProcess(const Napi::CallbackInfo& info)
@@ -72,6 +78,9 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
       Napi::Env env, HANDLE job, HANDLE process, DWORD pid, uint64_t creation) {
     auto instance = Constructor().New({});
     if (env.IsExceptionPending()) return Napi::Object::New(env);
+    if (napi_type_tag_object(env, instance, &kManagedJobProcessTypeTag) != napi_ok) {
+      return Napi::Object::New(env);
+    }
     auto* owned = Unwrap(instance);
     if (owned == nullptr) return Napi::Object::New(env);
     owned->job_ = job;
@@ -79,6 +88,48 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
     owned->pid_ = pid;
     owned->creationTicks_ = creation;
     return instance;
+  }
+
+  /**
+   * QA-only native entrypoint: deny fake JS prototypes and require identity
+   * of the exact private Job Object originally created by this addon.
+   * Calls the existing verified empty-job close path directly (not an
+   * overridable JS method). This does NOT verify historic journal authorship.
+   */
+  static Napi::Value CloseRecordedEmptyForQa(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    auto denied = [&](const char* reason) -> Napi::Value {
+      auto result = Napi::Object::New(env);
+      result.Set("state", Napi::String::New(env, reason));
+      return result;
+    };
+    if (info.Length() != 3 || !info[0].IsObject() ||
+        !info[1].IsNumber() || !info[2].IsString()) {
+      return denied("UNTRUSTED_JOB_OBJECT");
+    }
+    const double expectedPid = info[1].As<Napi::Number>().DoubleValue();
+    const std::string expectedTime = info[2].As<Napi::String>().Utf8Value();
+    if (expectedPid < 1 || expectedPid > 4294967295.0 ||
+        static_cast<double>(static_cast<DWORD>(expectedPid)) != expectedPid ||
+        expectedTime.empty()) {
+      return denied("JOB_IDENTITY_MISMATCH");
+    }
+    bool tagged = false;
+    if (napi_check_object_type_tag(env, info[0], &kManagedJobProcessTypeTag,
+                                   &tagged) != napi_ok || !tagged) {
+      return denied("UNTRUSTED_JOB_OBJECT");
+    }
+    void* raw = nullptr;
+    if (napi_unwrap(env, info[0], &raw) != napi_ok || raw == nullptr) {
+      return denied("UNTRUSTED_JOB_OBJECT");
+    }
+    auto* owned = static_cast<ManagedJobProcess*>(raw);
+    if (owned->pid_ != static_cast<DWORD>(expectedPid) ||
+        std::to_string(owned->creationTicks_) != expectedTime) {
+      return denied("JOB_IDENTITY_MISMATCH");
+    }
+    // An already-closed native handle is not evidence of a NEW clean close.
+    return owned->CloseIfEmptyForQa(info);
   }
 
  private:
@@ -214,6 +265,10 @@ uint64_t FileTimeTicks(const FILETIME& time) {
 
 void InitializeManagedJobProcess(Napi::Env env) {
   ManagedJobProcess::Initialize(env);
+}
+
+Napi::Value CloseRecordedManagedJobIfEmptyForQa(const Napi::CallbackInfo& info) {
+  return ManagedJobProcess::CloseRecordedEmptyForQa(info);
 }
 
 Napi::Value SpawnManagedJobContained(const Napi::CallbackInfo& info) {
