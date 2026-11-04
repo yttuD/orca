@@ -135,12 +135,19 @@ export async function ensureOperatorSession(
       }
     }
 
+    const csrfToken = unlockData.csrf_token || csrfData.csrf_token
+    if (!sessionCookie || !csrfToken) {
+      state.authenticated = false
+      state.sessionCookie = null
+      state.csrfToken = null
+      return { ok: false, error: 'Sesión de operador sin cookie o CSRF verificado.' }
+    }
     state.sessionCookie = sessionCookie
-    state.csrfToken = unlockData.csrf_token || csrfData.csrf_token || null
+    state.csrfToken = csrfToken
     state.authenticated = true
     state.lastAuthTime = now
 
-    return { ok: true, sessionCookie: state.sessionCookie, csrfToken: state.csrfToken }
+    return { ok: true, sessionCookie, csrfToken }
   } catch (err: unknown) {
     return {
       ok: false,
