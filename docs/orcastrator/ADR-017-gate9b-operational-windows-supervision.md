@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 PENDIENTE; MOTOR OPERATIVO BLOQUEADO
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO NO IMPLEMENTADO; MOTOR OPERATIVO BLOQUEADO
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -213,7 +213,7 @@ https://learn.microsoft.com/en-us/windows/win32/sync/mutex-objects
 ### Artefactos de contrato seguros publicados
 
 - `src/main/ipc/managed-engine-lease-qualification.ts`: política **pura**, sin adquisición de mutex/archivo, sin procesos, IPC o acceso a puertos. Rechaza fuentes Electron/`orcad.lock`/filesystem, alcance solo sesión, competencia, abandono, titularidad/ACL/identidad no verificadas, falta de Job Object o censo posterior desconocido. El máximo resultado posible `READY_FOR_ISOLATED_NATIVE_QA` es informativo para pruebas, NO autorización de despliegue ni de inicio del motor.
-- `src/main/ipc/managed-engine-lease-qualification.test.ts`: escenarios de rechazo y candidato sintético completo. Todas las declaraciones del test son ficticias: no comprueban exclusividad real entre procesos. Pruebas **NOT_RUN** hasta evidencia Windows.
+- `src/main/ipc/managed-engine-lease-qualification.test.ts`: escenarios de rechazo y candidato sintético completo. Todas las declaraciones del test son ficticias: no comprueban exclusividad real entre procesos. Pruebas **PASS en Windows (26/26 casos del contrato, 2026-11-04)**. El conjunto con las 18 pruebas de admisión previas tuvo **44/44 PASS**.
 
 ### Pruebas posteriores antes de instalar implementación nativa
 
@@ -224,4 +224,11 @@ https://learn.microsoft.com/en-us/windows/win32/sync/mutex-objects
 - Cierre inesperado mientras FastAPI queda en fase transitoria y abandono entre adquisición del lease y asociación del Job Object; nunca arrancar dos instancias.
 - Registrar evidencia de que WCB y cualquier motor previo siguen vivos e inalterados.
 
-**Gate 9B-C2 = CONTRATO PREPARADO / LEASE NATIVO NO IMPLEMENTADO / TESTS NO EJECUTADOS.** Mantener ambos PR DRAFT y el arranque operativo deshabilitado.
+**Gate 9B-C2 = CONTRATO Y SUS TESTS PASS / LEASE NATIVO NO IMPLEMENTADO / PRUEBAS DE EXCLUSIVIDAD REAL NOT_RUN.** Mantener ambos PR DRAFT y el arranque operativo deshabilitado.
+### Evidencia Windows Gate 9B-C2 — contrato aprobado (2026-11-04)
+
+El operador ejecutó desde el clon QA `tc:node`: 19.600 archivos sin errores de tipos (12,67 s). Vitest reunió `managed-engine-operational-admission.test.ts` y `managed-engine-lease-qualification.test.ts`: **2 archivos PASS, 44 pruebas PASS (44)**, duración 480 ms, marcador `GATE 9B-C2 LEASE CONTRACT QA: PASS`.
+
+Las advertencias Vite sobre futura carga ESM/CommonJS mediante `configLoader: native` fueron no bloqueantes.
+
+Esta evidencia **solo valida decisiones puras sobre datos sintéticos**, no mutexes, locks ni exclusión entre procesos reales. El mecanismo nativo y la verificación Windows multiproceso permanecen pendientes; está prohibido interpretar `READY_FOR_ISOLATED_NATIVE_QA` como permiso de arranque de FastAPI operativo.
