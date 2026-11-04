@@ -7,3 +7,4 @@
 // assigns the process to the job BEFORE resuming its primary thread.
 void InitializeManagedJobProcess(Napi::Env env);
 Napi::Value SpawnManagedJobContained(const Napi::CallbackInfo& info);
+Napi::Value CloseRecordedManagedJobIfEmptyForQa(const Napi::CallbackInfo& info);
