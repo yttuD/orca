@@ -288,7 +288,7 @@ export function ManagedStatusSegment({
           ) : null}
 
           {qaLifecycle && qaLifecycle.phase !== 'DISABLED' ? (
-            <ManagedSupervisedRecoveryPanel />
+            <ManagedSupervisedRecoveryPanel qaLifecycle={qaLifecycle} />
           ) : null}
 
           <div className="rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1.5 text-[11px] text-sky-300">
