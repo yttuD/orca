@@ -61,7 +61,8 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
   static void Initialize(Napi::Env env) {
     auto type = DefineClass(env, "ManagedJobProcess", {
         InstanceMethod("snapshot", &ManagedJobProcess::Snapshot),
-        InstanceMethod("close", &ManagedJobProcess::Close)
+        InstanceMethod("close", &ManagedJobProcess::Close),
+        InstanceMethod("closeIfEmptyForQa", &ManagedJobProcess::CloseIfEmptyForQa)
     });
     Constructor() = Napi::Persistent(type);
     Constructor().SuppressDestruct();
@@ -101,6 +102,65 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
   Napi::Value Close(const Napi::CallbackInfo& info) {
     CloseOwned();
     return info.Env().Undefined();
+  }
+
+  /**
+   * C3-E-C QA-only: verify this *same native* private Job Object is empty,
+   * and its original root HANDLE signaled, BEFORE closing the last job handle.
+   * Never enumerates, adopts or kills any external process. If still active,
+   * it leaves job+process handles untouched and reports BLOCKED.
+   *
+   * This is deliberately not a durable previous-owner attestation; it must
+   * not be replayed by a new process or interpreted from JSON alone.
+   */
+  Napi::Value CloseIfEmptyForQa(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    auto denied = [&](const char* state) -> Napi::Value {
+      auto result = Napi::Object::New(env);
+      result.Set("state", Napi::String::New(env, state));
+      return result;
+    };
+    if (job_ == nullptr || process_ == nullptr) {
+      return denied("ALREADY_CLOSED");
+    }
+
+    const DWORD rootWait = WaitForSingleObject(process_, 0);
+    if (rootWait == WAIT_TIMEOUT) {
+      return denied("ROOT_STILL_RUNNING");
+    }
+    if (rootWait != WAIT_OBJECT_0) {
+      return denied("UNKNOWN");
+    }
+
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
+    if (!QueryInformationJobObject(job_, JobObjectBasicAccountingInformation,
+                                   &accounting, sizeof(accounting), nullptr)) {
+      return denied("UNKNOWN");
+    }
+    if (accounting.ActiveProcesses != 0) {
+      return denied("DESCENDANTS_STILL_RUNNING");
+    }
+
+    // No active processes are members of this private job, and the root's
+    // own kernel HANDLE has signaled. Closing now cannot kill a live member.
+    // A separate future writer must still verify integrity and generation;
+    // this returned JS object itself is not an authenticated journal record.
+    if (!CloseHandle(job_)) {
+      return denied("UNKNOWN");
+    }
+    job_ = nullptr;
+    CloseHandle(process_);
+    process_ = nullptr;
+
+    auto result = Napi::Object::New(env);
+    result.Set("state", Napi::String::New(env, "CLOSED_EMPTY_QA_ONLY"));
+    result.Set("pid", Napi::Number::New(env, static_cast<double>(pid_)));
+    result.Set("creationTimeTicks",
+               Napi::String::New(env, std::to_string(creationTicks_)));
+    result.Set("observedActiveProcesses", Napi::Number::New(env, 0));
+    result.Set("rootExitedBeforeClose", Napi::Boolean::New(env, true));
+    result.Set("notHistoricalAttestation", Napi::Boolean::New(env, true));
+    return result;
   }
 
   Napi::Value Snapshot(const Napi::CallbackInfo& info) {
