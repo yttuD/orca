@@ -424,3 +424,10 @@ Tercer ensayo tras el arreglo del fixture Node detached: el operador presentó V
 **Estado de confianza:** un resultado exitoso se llama `QA_CLEAN_STOP_PERSISTED_UNATTESTED`. Su journal todavía puede ser sustituido o revertido por procesos del mismo usuario. Un `CLEAN_STOP` de este archivo NO alimenta automáticamente la política C3-D, NO constituye una firma/autorización de arranque y NO demuestra que una nueva instancia pueda reconstruir el Job Object anterior después de un crash. El escritor primitivo de E-A sigue existiendo como herramienta QA, por lo que no existe garantía de «no bypass» en la ruta de telemetría.
 
 **QA siguiente:** En el clon aislado Windows, `pnpm.cmd run tc:node`; `pnpm.cmd exec node-gyp rebuild --directory native/windows-security`; Vitest de `managed-job-native-windows.test.ts`, `managed-job-clean-close-windows.test.ts`, `managed-previous-owner-journal-qa.test.ts`, `managed-previous-owner-lease-journal-qa.test.ts` y `managed-qa-clean-stop-journal-windows.test.ts`. Resultado previsto solo si todos aprueban: **5 archivos / 29 pruebas PASS** (23 previas + 6 nuevas). No tocar WCB, ni motor operativo, ni GitHub Actions, ni fusionar PRs.
+
+
+### Gate 9B-C3-E-D — Evidencia de QA Windows PASS (2026-11-04)
+
+El operador reportó `RUN v5.0.5` en el clon aislado Orca: **5 archivos / 29 pruebas PASS**, duración **2,33 segundos**, marcador exacto `GATE 9B-C3E-D NATIVE CLEAN STOP JOURNAL QA: PASS`, inicio de suite 11:27:43 hora local. Se confirma la suite sintética que enlaza identidad del Job Object real con lease nativo y transición QA no autenticada del journal. El fragmento compartido corresponde a Vitest y no vuelve a transcribir el build MSVC ni el typecheck; no atribuirles por separado un nuevo PASS.
+
+**C3-E-D PASS exclusivamente en QA.** La salida `QA_CLEAN_STOP_PERSISTED_UNATTESTED` no es testimonio firmado, no evita rollback/sustitución por aplicaciones del mismo usuario, no autentica generaciones históricas ni resuelve motores huérfanos tras crash. No conectar todavía al flujo de arranque operativo.
