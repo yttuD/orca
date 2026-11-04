@@ -480,3 +480,11 @@ El operador aportó Vitest **1 archivo / 22 pruebas PASS**, **479 ms**, sentinel
 Tras confirmar recuperación supervisada para el MVP, se preparó `src/main/ipc/managed-supervised-recovery-provenance.ts` y una suite de 22 tests `managed-supervised-recovery-provenance.test.ts` **NOT_RUN**. C4-B1 valida coherencia sintética entre identidad/captura de lease, listener y proceso registrado, frescura de cada observación y que los censos fueron posteriores al lease; cualquier anomalía degrada a UNKNOWN. Una declaración `MAIN_NATIVE_CLAIM` sigue siendo **inverificable como origen** hasta que un recolector nativo real y acotado la produzca. Todos los resultados contienen `BLOCKED`, `startupAllowed:false`, `UNATTESTED_CLAIMS_ONLY`.
 
 El runbook se encuentra en el repo motor `docs/QA/ORCA-D02-GATE9B-C4B1-CLAIM-PROVENANCE-QA.md`. Próximo QA: TypeScript y **2 archivos / 44 pruebas** (22 C4-A + 22 C4-B1) sin recompilar C++. No activar IPC operativo, servicios Windows, GitHub Actions ni merges.
+
+## Gate 9B-C4-B1 — Windows PASS y C4-B2-A sensor propio preparado (2026-11-04)
+
+El operador ejecutó C4-A+C4-B1 en Windows QA: **2 archivos / 44 pruebas PASS**, 514 ms, marcador `GATE 9B-C4B1 SUPERVISED RECOVERY PROVENANCE QA: PASS`. Se aprueba la consistencia sintética de declaraciones, no la autenticidad de procesos históricos.
+
+Se añadieron `src/main/ipc/managed-qa-native-self-observation.ts` y `src/main/ipc/managed-qa-native-self-observation-windows.test.ts` (**8 pruebas preparadas NOT_RUN**) para C4-B2-A: lectura de sensores Win32 ya existentes únicamente sobre el PID propio de QA y listener propio loopback efímero, luego de verificar un lease nativo real. No se pide ni acepta un PID arbitrario; todos los resultados siguen `BLOCKED`, `startupAllowed:false`, `historicalProof:false`. No hay evidencia del motor anterior ni del Job Object histórico. Fuente de detalles y límites: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
+
+Próxima validación **3 archivos/52 pruebas** (22+22+8) en el clon Windows QA, TypeScript + Vitest, sin recompilar C++ ni tocar WCB/servicios operativos. Ambos PRs DRAFT; sin GitHub Actions ni merges.
