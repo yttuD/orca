@@ -6,7 +6,7 @@ import type { RuntimeClientEvent } from '../../../shared/runtime-client-events'
 import { readSidebarFeedDomains } from '../../../shared/sidebar-list/sidebar-feed-domains'
 import { MOBILE_PROJECT_SECTIONS_METHOD } from '../../../shared/mobile-project-sections-contract'
 import { OrcaRuntimeService } from '../orca-runtime'
-import { ALL_RPC_METHODS } from '../rpc/methods'
+import { MOBILE_PROJECT_SECTIONS_METHODS } from '../rpc/methods/mobile-project-sections'
 import type { RuntimeStore } from '../runtime-store-contract'
 import { requireSwitchedOn } from './require-switched-on'
 import { TestPhone } from './sidebar-inputs-feed.test-fixture'
@@ -114,8 +114,9 @@ describe('the project catalog in the sidebar feed', () => {
   it('answers mobileRelay.projectSections from the same catalog for a page that predates it', async () => {
     const { runtime, write } = setup()
     write('school')
-    const method = ALL_RPC_METHODS.find((entry) => entry.name === MOBILE_PROJECT_SECTIONS_METHOD)
-    const reply = await method?.handler(undefined, { runtime })
+    const method = MOBILE_PROJECT_SECTIONS_METHODS[0]
+    expect(method.name).toBe(MOBILE_PROJECT_SECTIONS_METHOD)
+    const reply = await method.handler(undefined, { runtime })
     expect(reply).toMatchObject({
       catalog: {
         repos: [{ id: 'r', projectGroupId: 'school', executionHostId: 'local' }],

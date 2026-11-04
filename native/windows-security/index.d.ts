@@ -103,3 +103,195 @@ export declare function hasNativeExport(name: string): boolean
 
 /** True on builds whose isolated spawn requests job breakaway; older binaries lack the export. */
 export declare function isolatedSpawnBreaksAwayFromJob(): boolean
+
+
+/** Opaque, native-owned process + private unnamed Win32 Job Object. */
+export type ManagedJobContainedSnapshot = {
+  readonly closed: boolean
+  readonly pid: number
+  /** Exact Win32 FILETIME ticks; never convert to JS Number. */
+  readonly creationTimeTicks: string
+  readonly rootRunning: boolean
+  /** Includes root and all descendants still associated with this job. */
+  readonly activeProcesses: number
+}
+
+/**
+ * In this N-API object, the only job HANDLE is held by Electron.
+ * close() is idempotent, kills the whole contained job and does not accept
+ * any PID, process name or network port.
+ */
+export type ManagedJobContainedCleanCloseQaResult =
+  | {
+      readonly state:
+        | 'ROOT_STILL_RUNNING'
+        | 'DESCENDANTS_STILL_RUNNING'
+        | 'UNKNOWN'
+        | 'ALREADY_CLOSED'
+    }
+  | {
+      readonly state: 'CLOSED_EMPTY_QA_ONLY'
+      readonly pid: number
+      readonly creationTimeTicks: string
+      readonly observedActiveProcesses: 0
+      readonly rootExitedBeforeClose: true
+      readonly notHistoricalAttestation: true
+    }
+
+export type ManagedJobContainedProcess = {
+  snapshot(): ManagedJobContainedSnapshot
+  /** QA-only: close only after original root exited AND kernel Job Object member count is zero. No PID-based termination. */
+  closeIfEmptyForQa(): ManagedJobContainedCleanCloseQaResult
+  close(): void
+}
+
+/**
+ * SECURITY: Low-level primitive; NOT approval to launch an operational motor.
+ * Caller must authenticate the operator and verify the file, environment,
+ * profile, exclusive lease and host policy before using this in production.
+ * Spawns suspended, assigns to private kill-on-close Job Object, then resumes.
+ * environmentBlock: UTF-16 K=V\0...\0\0. Standard handles are NOT inherited.
+ */
+export declare function spawnManagedJobContained(
+  file: string,
+  commandLine: string,
+  cwd: string,
+  environmentBlock: string
+): ManagedJobContainedProcess
+
+/** Gate 9B-C2 only. Lease possession NEVER authorizes an operational motor start. */
+export type ManagedMotorLeaseSnapshot = {
+  readonly held: boolean
+  readonly scope: 'MACHINE'
+  readonly motorIdentitySha256: string
+  readonly aclVerified: boolean
+  /** Exact Win32 FILETIME ticks: string preserves 100ns precision. */
+  readonly ownerCreationTimeTicks: string
+  /** Requires independent, post-acquisition port/process/Job Object census. */
+  readonly reconciliationRequired: true
+}
+
+export type ManagedMotorLeaseHandle = {
+  snapshot(): ManagedMotorLeaseSnapshot
+  /** Releases ONLY the owner's mutex; never kills or adopts processes. */
+  close(): void
+}
+
+export type ManagedMotorLeaseAcquireResult =
+  | { readonly state: 'HELD_BY_OTHER' }
+  | {
+      readonly state: 'ACQUIRED_REQUIRES_RECONCILIATION'
+      readonly lease: ManagedMotorLeaseHandle
+    }
+
+/**
+ * Windows-only: atomically claim a globally named QA lease keyed by a
+ * trusted canonical lower-case SHA-256 identity. Existing objects block.
+ * Requires verified ACL, no inheritable handle, and no wait/adoption.
+ * NOT an operational start grant. The caller must own the resulting
+ * opaque handle until all of its own Job Object processes are stopped.
+ */
+export declare function acquireManagedMotorLease(
+  motorIdentitySha256: string
+): ManagedMotorLeaseAcquireResult
+
+
+/** C3-B, diagnostic QA only. Never expose executablePath to a renderer. */
+export type ManagedQaListenerIdentity = {
+  readonly family: 'IPv4' | 'IPv6'
+  readonly pid: number
+  /** Win32 process creation FILETIME ticks as decimal string, or null. */
+  readonly creationTimeTicks: string | null
+  /** Internal path returned by Windows; null if access denied or process exited. */
+  readonly executablePath: string | null
+  readonly identityVerified: boolean
+}
+
+export type ManagedQaListenerCensus =
+  | {
+      readonly status: 'NO_LISTENER' | 'LISTENER_PRESENT'
+      readonly port: number
+      readonly listeners: readonly ManagedQaListenerIdentity[]
+    }
+  | {
+      readonly status: 'UNKNOWN'
+      readonly port: number
+      readonly reason: 'TCP_TABLE_UNAVAILABLE' | 'TCP_TABLE_INCONSISTENT'
+      readonly listeners: readonly []
+    }
+
+/**
+ * Windows-only read-only snapshot of IPv4 AND IPv6 listening TCP rows by PID.
+ * Gate C3 test-only; rejects reserved operational/WCB ports.
+ * This checks ONLY socket listeners: no result proves absence of an orphan
+ * motor or Job Object. Keep the real lease and revalidate atomically at bind.
+ * A returned UNKNOWN or identityVerified=false always blocks admission.
+ */
+export declare function inspectManagedQaTcpListeners(port: number): ManagedQaListenerCensus
+
+/**
+ * C3-C diagnostic QA only. Its input must eventually come from a trusted
+ * previous-owner record (PID + exact creation FILETIME), not renderer state.
+ * NOT_RUNNING, PID_REUSED and MATCH_EXITED do not prove all old descendants
+ * or the previous Python motor's Job Object are gone.
+ */
+export type ManagedQaRecordedProcessObservation = {
+  readonly status:
+    | 'MATCH_RUNNING'
+    | 'MATCH_EXITED'
+    | 'PID_REUSED'
+    | 'NOT_RUNNING'
+    | 'UNKNOWN'
+  readonly pid: number
+  readonly actualCreationTimeTicks: string | null
+  /** Diagnostic only; keep in trusted main/native, never renderer/logs. */
+  readonly executablePath: string | null
+  readonly reason?:
+    | 'OPEN_PROCESS_UNVERIFIED'
+    | 'PROCESS_TIME_UNVERIFIED'
+    | 'PROCESS_STATE_UNVERIFIED'
+    | 'EXECUTABLE_UNVERIFIED'
+}
+
+/** Read-only Windows PID+creation-time identity observation. Never kills. */
+export declare function inspectManagedQaRecordedProcess(
+  pid: number,
+  expectedCreationTimeTicks: string
+): ManagedQaRecordedProcessObservation
+
+/**
+ * C3-E-B QA ONLY: validates an actual live native ManagedMotorLease
+ * ObjectWrap and owning Windows thread for the exact motor hash.
+ *
+ * This is not a signature, a persistent proof or operational admission.
+ * An unrelated process with the same user identity may acquire the mutex
+ * after release and may edit the QA journal.
+ */
+export type ManagedQaNativeLeaseOwnerProof =
+  | { readonly verified: false }
+  | {
+      readonly verified: true
+      readonly ownerPid: number
+      readonly ownerCreationTimeTicks: string
+    }
+
+export declare function verifyManagedMotorLeaseOwnerForQa(
+  lease: unknown,
+  motorIdentitySha256: string
+): ManagedQaNativeLeaseOwnerProof
+
+/**
+ * C3-E-D QA only. Uses a native type-tagged private Job Object and validates
+ * its exact root PID/FILETIME before invoking the native clean-close path.
+ * A forged JS object, fake prototype or stale identity is rejected.
+ * This is NOT an authenticated journal record or an operational start grant.
+ */
+export type ManagedQaRecordedCleanCloseResult =
+  | ManagedJobContainedCleanCloseQaResult
+  | { readonly state: 'UNTRUSTED_JOB_OBJECT' | 'JOB_IDENTITY_MISMATCH' }
+
+export declare function closeRecordedManagedJobIfEmptyForQa(
+  job: unknown,
+  expectedRootPid: number,
+  expectedRootCreationTimeTicks: string
+): ManagedQaRecordedCleanCloseResult

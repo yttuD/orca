@@ -8,6 +8,10 @@
 #include <wincred.h>
 
 #include "isolated-spawn.h"
+#include "managed-job-process.h"
+#include "managed-motor-lease.h"
+#include "managed-listener-census.h"
+#include "managed-recorded-process.h"
 
 #include <functional>
 #include <cstring>
@@ -552,6 +556,20 @@ Napi::Value ClearStdHandleInheritance(const Napi::CallbackInfo& info) {
 }  // namespace
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  InitializeManagedJobProcess(env);
+  InitializeManagedMotorLease(env);
+  exports.Set("inspectManagedQaRecordedProcess",
+              Napi::Function::New(env, InspectManagedQaRecordedProcess));
+  exports.Set("inspectManagedQaTcpListeners",
+              Napi::Function::New(env, InspectManagedQaTcpListeners));
+  exports.Set("acquireManagedMotorLease",
+              Napi::Function::New(env, AcquireManagedMotorLease));
+  exports.Set("verifyManagedMotorLeaseOwnerForQa",
+              Napi::Function::New(env, VerifyManagedMotorLeaseOwnerForQa));
+  exports.Set("spawnManagedJobContained",
+              Napi::Function::New(env, SpawnManagedJobContained));
+  exports.Set("closeRecordedManagedJobIfEmptyForQa",
+              Napi::Function::New(env, CloseRecordedManagedJobIfEmptyForQa));
   exports.Set("currentUserSid", Napi::Function::New(env, CurrentUserSid));
   exports.Set("getDaclAces", Napi::Function::New(env, GetDaclAces));
   exports.Set("readFileWithDacl", Napi::Function::New(env, ReadFileWithDacl));

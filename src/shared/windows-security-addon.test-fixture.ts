@@ -128,6 +128,24 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     spawnDetachedIsolated: () => {
       throw new Error('spawnDetachedIsolated is not faked')
     },
+    spawnManagedJobContained: () => {
+      throw new Error('spawnManagedJobContained is not faked')
+    },
+    closeRecordedManagedJobIfEmptyForQa: () => {
+      throw new Error('closeRecordedManagedJobIfEmptyForQa is not faked')
+    },
+    acquireManagedMotorLease: () => {
+      throw new Error('acquireManagedMotorLease is not faked')
+    },
+    verifyManagedMotorLeaseOwnerForQa: () => {
+      throw new Error('verifyManagedMotorLeaseOwnerForQa is not faked')
+    },
+    inspectManagedQaTcpListeners: () => {
+      throw new Error('inspectManagedQaTcpListeners is not faked')
+    },
+    inspectManagedQaRecordedProcess: () => {
+      throw new Error('inspectManagedQaRecordedProcess is not faked')
+    },
     isolatedSpawnBreaksAwayFromJob: () => true,
     hasNativeExport: () => true,
     getDaclAces: (addonPath) => {

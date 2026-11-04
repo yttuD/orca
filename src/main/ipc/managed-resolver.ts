@@ -26,6 +26,25 @@ export function resolveProfileAndToken(): ManagedProfileConfig {
     port = Number(process.env.MANAGED_PORT)
   }
 
+  // Hidden E2E must never walk host directories for .active_profile or
+  // credentials, even BEFORE the owned QA server has selected its port.
+  // Fail closed against port 0 until its in-process supervisor sets an
+  // explicit ephemeral endpoint; never fall back to operational 8765.
+  if (process.env.ORCA_E2E_HEADLESS === '1') {
+    const safePort =
+      process.env.MANAGED_PORT && /^[0-9]+$/.test(process.env.MANAGED_PORT) &&
+      Number(process.env.MANAGED_PORT) >= 1024 &&
+      Number(process.env.MANAGED_PORT) <= 65535
+        ? Number(process.env.MANAGED_PORT)
+        : 0
+    token = process.env.MANAGED_BRIDGE_TOKEN?.trim() || null
+    profile = 'STAGING_LOCAL'
+    return {
+      profile, port: safePort, token,
+      engineUrl: `http://127.0.0.1:${safePort}/api/managed/rpc`
+    }
+  }
+
   // Check for unambiguous .active_profile JSON descriptor
   let currentDir = process.cwd()
   let activeProfileMetadata: Record<string, unknown> | null = null

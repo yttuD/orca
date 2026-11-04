@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { ManagedRpcParams } from '../../../../shared/rpc-contract/managed-rpc-params'
 import { defineMethod, type RpcContext } from '../core'
 import {
   callEngineRpc,
@@ -6,7 +6,7 @@ import {
   type ManagedCallerAuth
 } from '../../../ipc/managed-resolver'
 
-const AnyParamsSchema = z.record(z.unknown()).optional()
+const AnyParamsSchema = ManagedRpcParams
 
 function extractCallerAuth(
   params: Record<string, unknown> | undefined,
@@ -90,7 +90,12 @@ async function forwardRpc(
   return (res.data as Record<string, unknown>) ?? {}
 }
 
-const defTask = (name: string) =>
+type ManagedTaskRpcName =
+  | 'managed.getExecution'
+  | 'managed.getEvidence'
+  | 'managed.presentReviewPacket'
+
+const defTask = <TName extends ManagedTaskRpcName>(name: TName) =>
   defineMethod({
     name,
     permission: 'workspace',
@@ -133,7 +138,7 @@ export const MANAGED_RPC_METHODS = [
       if (!deviceId || !deviceName || !clientNonce) {
         throw new Error('MISSING_REGISTRATION_FIELDS')
       }
-      if (!confirmedFp || !confirmedFp.trim()) {
+      if (typeof confirmedFp !== 'string' || !confirmedFp.trim()) {
         throw new Error(
           'CONFIRMED_FINGERPRINT_REQUIRED: Registration requires verified host fingerprint'
         )

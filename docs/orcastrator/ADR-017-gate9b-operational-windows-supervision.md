@@ -1,0 +1,520 @@
+# ADR-017 — Gate 9B: contención del motor operativo en Windows
+
+Fecha: 2026-11-04
+Estado: GATE 9B-A PASS; 9B-B PASS; 9B-C1 PASS (3/3 WINDOWS); 9B-C2 CONTRATO PASS (44/44), LEASE NATIVO QA PASS (4/4), C3 CONTRATO PASS (28/28), C3-B SENSOR TCP PASS (31/31), C3-C IDENTIDAD REGISTRADA PASS 34/34, C3-D PENDIENTE; MOTOR OPERATIVO BLOQUEADO
+Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
+
+## Resultado anterior certificado
+
+El operador presentó evidencia Windows: E2E Gate 9A
+`tests/e2e/orcastrator-managed-qa-engine-lifecycle.spec.ts`
+**1 passed (1.2m)**, caso 24,5 segundos, build Electron
+19,02 segundos, CLI sin errores en 3.532 archivos, y limpieza del
+repositorio temporal. Se verificaron arranque de Python QA desde
+Electron, UI, recuperación de caída y stop del proceso propio.
+
+Gate 9A **no demuestra** contención de procesos descendientes,
+persistencia de autoridad ni reinicio de motor operativo. El control
+actual usa `ChildProcess.kill()` sobre el proceso QA. No es un
+mecanismo de Job Object completo.
+
+## Análisis de implementación disponible
+
+- `src/main/ipc/managed-qa-engine-supervisor.ts`: controla la
+  instancia desechable propia, pero no es el supervisor del servidor
+  de producción.
+- `src/main/windows-process-tree-kill.ts`: usa `taskkill /T /F`;
+  no es un mecanismo aceptable como autoridad principal de contención
+  del motor por carrera de PID y riesgo de matar procesos no propios.
+- `src/main/startup/windows-isolated-spawner.ts` y
+  `src/shared/windows-security-addon.ts`: implementan aislamiento
+  de herencia de handles de procesos detached; la interfaz disponible
+  no demuestra las operaciones necesarias para un Job Object exclusivo
+  del motor (spawn suspendido + attach a Job Object + resume).
+- En el motor Python,
+  `src/adapters/process_supervisor.py` sí usa Win32 Job Objects
+  para *ejecutores de tareas*; no supervisa el *proceso servidor* padre.
+  No se debe confundir el dueño de una tarea con el dueño de FastAPI.
+
+## Decisión y diseño
+
+**No conectar un botón de start/stop operativo** ni habilitar
+autoarranque en Desktop hasta validar y desplegar una autoridad nativa
+de procesos que pertenezca a Electron y garantice:
+
+1. Verificación de instalación y ejecutable por ruta canónica
+   firmada/confiable, más perfil `STAGING_LOCAL` antes de `NORMAL`.
+2. Confirmación real del operador en main (native dialog o equivalente
+   de confianza), nunca `renderer.authenticated=true` ni bandera
+   inyectada en preload como autorización.
+3. Raíz de datos staging separada de `ORQUESTADOR-MASTER/data`,
+   WCB, tokens y grants.
+4. Preflight de listener/procesos existentes; si hay servicio ajeno,
+   estado incierto o posible proceso huérfano, bloquear, no adoptar
+   ni finalizar por PID, nombre o puerto.
+5. Lease exclusivo de arranque contra dos instancias de Electron.
+6. Crear proceso inicialmente suspendido, agregarlo a Job Object
+   exclusivo de ese motor y solo después reanudar. Establecer
+   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; revalidar handle, creación
+   y descendientes antes de considerar ONLINE.
+7. Fijar identidad PID + fecha Win32 de creación + generación de
+   lease; nunca basar decisiones únicamente en PID.
+8. Crash/recovery con límite de intentos, backoff y aislamiento de
+   orcad, WCB, Electron, otros motores y procesos externos.
+9. Mantener el modo operativo deshabilitado ante ausencia de addon,
+   permisos insuficientes, entorno no Windows, conflictos de perfil
+   o errores de liberación.
+10. Validar Windows en pruebas sintéticas: duplicidad de arranque,
+    caída del padre, cierre de Job Object, descendientes,
+    PID reciclado, puerto ocupado, process lease, crash/recovery,
+    pausa del motor y supervivencia de WCB.
+11. Preservar autorización de inferencia y despacho independiente:
+    arrancar FastAPI nunca implica autorizar trabajo real.
+
+## Contrato inicial (fail-closed, sin efectos secundarios)
+
+`src/main/ipc/managed-engine-operational-admission.ts` implementa una
+decisión **pura** a partir de evidencias previamente verificadas
+por main/native: bloqueo por Windows/perfil/aprobación/ejecutable/data
+root/procesos existentes/lease/Job Object/descendientes/creación Win32
+/aislamiento WCB/recuperación.
+
+Incluso con todas las afirmaciones verdaderas solo devuelve
+`READY_FOR_WINDOWS_QUALIFICATION`: **no da autorización para iniciar
+producción ni abre un proceso**. Nadie debe conectar la función a un
+IPC de start hasta obtener pruebas independientes de cada afirmación
+y una nueva revisión técnica.
+
+Las pruebas
+`src/main/ipc/managed-engine-operational-admission.test.ts`
+**PASARON EN WINDOWS el 2026-11-04 (18/18)**. También se confirmó
+`tc:node` PASS sin errores de tipos en 19.596 archivos (12,15 s).
+Las advertencias de Vite sobre carga ESM/CommonJS fueron no bloqueantes.
+Esto NO prueba contención del árbol de procesos nativo.
+
+## Estado de puertas
+
+- Gate 9A: PASS (Windows).
+- Gate 9B-A: contrato de admisión y unit test, creado en rama.
+- Gate 9B-B: servicio Win32 Job Object y lease, NO IMPLEMENTADO.
+- Gate 9B-C: verificación Windows de crash / descendants / WCB,
+  NOT_RUN.
+- Gate 9B-D: activación operativa, NO AUTORIZADA.
+
+Sin merges ni GitHub Actions. Ambos PR permanecen DRAFT.
+
+
+## Gate 9B-B — Implementación nativa inicial, todavía sin validar (2026-11-04)
+
+En `native/windows-security` se añadió un primitivo **no conectado al
+inicio del motor operativo**:
+
+- `src/managed-job-process.cc/.h`: `spawnManagedJobContained(file, commandLine, cwd, environmentBlock)`.
+- El primitivo crea un Job Object Windows sin nombre ni handles
+  heredables, configura y relee `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
+  inicia el ejecutable con `CREATE_SUSPENDED` y
+  `bInheritHandles=FALSE`, lo asocia al Job Object y recién entonces
+  reanuda el hilo principal. Si falla cualquiera de los pasos,
+  termina el proceso mediante **su propio HANDLE**, sin buscar ni
+  reutilizar PID ajenos.
+- El retorno es un objeto opaco nativo `ManagedJobContainedProcess`
+  con `snapshot()` y `close()`, retiene el único Job HANDLE y lo
+  libera en cierre/GC/caída del proceso padre. `snapshot` ofrece
+  PID y **fecha Win32 de creación en ticks como string** para evitar
+  errores de precisión de números JS, y el conteo de procesos
+  activos asociados; esos valores NO se envían al renderer.
+- El binding `native/windows-security/binding.gyp` agrega el nuevo
+  archivo C++; `index.js`/`index.d.ts` y
+  `src/shared/windows-security-addon.ts` exponen el adaptador tipado.
+- La prueba Windows
+  `src/main/ipc/managed-job-native-windows.test.ts` solo usa
+  un Node sintético temporal que lanza un descendiente. Comprueba
+  la contención de ambos y que el cierre del Job Object termina los
+  dos, sin tocar puertos ni WCB. **PASS (2/2) en Windows 2026-11-04**.
+
+La implementación nativa no equivale a una solución operativa completa.
+Todavía faltan *lease* exclusivo contra doble inicio, reconocimiento
+de instancias existentes, integridad de la instalación, verificación
+de permisos, aceptación del operador, integración del arranque/stop
+del FastAPI operativo, comprobación de escenarios de crash del padre
+y evaluación de incompatibilidad de Job Objects anidados. El fallo
+de cualquiera de esas condiciones mantiene la admisión bloqueada.
+
+Microsoft documenta que los hijos creados con `CreateProcess`
+se asocian al job del padre por defecto y que el límite
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` termina los procesos del job al
+cerrar el último handle:
+https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+
+**Resultados de aceptación separados**:
+- 9B-A policy: **18 PASS / Windows**.
+- 9B-B compilar N-API y prueba real padre/hijo: **PASS (2/2 WINDOWS)**.
+- 9B-C falla inesperada de padre nativo, lease exclusivo y escenarios
+  de contención: **PENDIENTE / NOT_RUN**.
+- 9B-D habilitación real: **NO AUTORIZADA**.
+
+
+## Confirmación Windows Gate 9B-B (2026-11-04)
+
+El operador informó `tc:node` PASS en 19.597 archivos (15,29 s), `node-gyp 12.3.0` con Node 22.23.4 y VS2026/MSBuild compiló `managed-job-process.cc` y produjo `orca_windows_security.node` (`gyp info ok`), y Vitest `managed-job-native-windows.test.ts`: **2 passed (2)** en 727 ms. Confirmado `GATE 9B NATIVE JOB CONTAINMENT QA: PASS`. Vite advirtió sobre ESM/CommonJS, sin errores.
+
+Este PASS es de `job.close()` explícito sobre procesos QA sintéticos. **No es todavía prueba de caída del dueño, lease de instancia única ni aprobación de arranque operativo.**
+
+## Gate 9B-C1 — Caída de propietario del Job Object (WINDOWS PASS 2026-11-04)
+
+En el fork Orca se agregaron `tests/fixtures/orca-gate9c-job-owner.cjs` y
+`src/main/ipc/managed-job-owner-crash-windows.test.ts`.
+El test ejecuta exclusivamente procesos Node temporales con entorno
+mínimo y vencimiento propio. Un proceso propietario lanza un proceso
+contenedor en el Job Object; este lanza otro descendiente.
+El test fuerza la caída del propietario a través de su propio handle
+`ChildProcess` **sin llamar a `job.close()`** y espera que ambos
+procesos contenidos terminen. Simultáneamente comprueba que otro
+proceso sintético independiente, con el mismo ejecutable, permanece
+vivo. Nunca mata por PID ni descubre servicios del host.
+
+**Evidencia Windows:** `tc:node` PASS (19.598 archivos, 12,30 s), Vitest de `managed-job-native-windows.test.ts` y `managed-job-owner-crash-windows.test.ts` **3/3 PASS** en dos archivos (812 ms), mensaje `GATE 9B-C1 WINDOWS QA: PASS`. Las advertencias de Vite fueron no bloqueantes. El test no toca FastAPI, WCB, los puertos 8765/8768/8769 ni secretos del motor.
+
+Una aprobación 9B-C1 no certificará lease exclusivo, no adopción de
+incumbentes, integridad de instalación, aprobación local ni disposición
+para iniciar el motor operativo. Se desarrollarán en fases posteriores
+del Gate 9B-C.
+
+## Gate 9B-C2 — Protección contra doble instancia (pendiente)
+
+Diseño requerido: exclusión entre procesos Windows, con recurso exclusivo cuyo ciclo de vida esté asociado al proceso propietario y se libere si éste desaparece inesperadamente. La primera validación debe ser íntegramente sintética en los clones QA: dos procesos compitiendo, rechazo del segundo, liberación al cierre del primero, liberación tras caída y rechazo si la titularidad es incierta. En producción no bastará la exclusión: el arranque también exige preflight de procesos incumbentes, identidad de instalación y perfil, autorización local en Electron main, raíz de datos aislada y verificación de puertos ajenos. Hasta entonces no habilitar arranque del motor operativo.
+
+## Gate 9B-C2 — Contrato comprobable de lease específico del motor (2026-11-04)
+
+**Situación:** el contrato puro y tests están implementados en rama; la adquisición nativa real continúa bloqueada y NO IMPLEMENTADA. Nunca conectar el contrato a un IPC o flujo de arranque operativo.
+
+### Reutilización de mecanismos existentes y límites
+
+- `src/main/startup/single-instance-lock.ts`: Electron `requestSingleInstanceLock()` previene duplicados dentro de un perfil visual, pero perfiles separados no comparten necesariamente la exclusión del mismo motor.
+- `src/main/startup/desktop-profile-instance-lock.ts` y `src/main/orcad/orcad-instance-lock.ts`: `orcad.lock` protege el acceso concurrente a la raíz de datos de Orca. No constituye por sí mismo la propiedad de un *motor Orcastrator* identificado por instalación y servicio. Además, el startup Desktop trata otros errores como `unavailable` y conserva el arranque heredado, lo que no puede reutilizarse como política de admisión del motor.
+- `src/main/managed-server/activation/orcad-activation-lock.ts`: el fencing remoto de `orcad` tiene otra responsabilidad; no sustituye exclusión local del servidor Python.
+
+### Criterios del lease que deberá proporcionar el componente nativo
+
+1. Debe cubrir **todas las instancias y perfiles que puedan alcanzar el mismo motor Windows**, incluso sesiones de inicio de sesión distintas. El alcance de una única sesión o perfil es insuficiente.
+2. Identidad canónica de motor: combinación estable de instalación, identificador de motor y destino de servicio; derivar un SHA-256 sin incluir rutas secretas ni identificadores personales en logs.
+3. Exclusión atómica, acceso restringido al propietario autorizado, **handle de titularidad** mantenido abierto desde antes de iniciar el proceso hasta confirmar su retiro. No usar `process.pid` como prueba suficiente.
+4. La prueba de dueño incluye generación, creación de proceso Windows en ticks de 100 ns (string), identidad Win32 verificable y vínculo con el Job Object que contiene al motor.
+5. `HELD_BY_OTHER` bloquea sin intentar terminar, adoptar o inspeccionar secretos del competidor. `UNKNOWN` y errores de permisos también bloquean.
+6. `ABANDONED` **no equivale a libre**: requiere reconciliación independiente del listener, Job Object y procesos remanentes, con veredicto explícito y nueva generación antes de iniciar. Microsoft documenta que el recurso protegido por un mutex abandonado queda en estado potencialmente indeterminado.
+7. Bajo el lease recién adquirido se vuelve a realizar un **censo posterior de procesos/puerto**; un servicio anterior, aunque sea propio, obliga a detener la admisión y escalar a recuperación controlada. El snapshot anterior al lease no basta por la carrera TOCTOU.
+8. Un cierre intencional solo libera la titularidad al terminar el árbol propio; un cierre abrupto debe causar liberación del objeto nativo pero **nunca habilitar arranque automático sin reconciliación**.
+9. Prohibido usar `orcad.lock` como sustituto, forzar liberaciones por nombre de proceso/PID o tocar WCB y otras instalaciones. No hay permisos de arranque de producción en esta fase.
+
+Microsoft: `CreateMutexExW` advierte sobre el riesgo de apropiación previa del nombre; `Mutex Objects` explica el resultado `WAIT_ABANDONED` y el estado indeterminado del recurso. Referencias:
+https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexexw
+https://learn.microsoft.com/en-us/windows/win32/sync/mutex-objects
+
+### Artefactos de contrato seguros publicados
+
+- `src/main/ipc/managed-engine-lease-qualification.ts`: política **pura**, sin adquisición de mutex/archivo, sin procesos, IPC o acceso a puertos. Rechaza fuentes Electron/`orcad.lock`/filesystem, alcance solo sesión, competencia, abandono, titularidad/ACL/identidad no verificadas, falta de Job Object o censo posterior desconocido. El máximo resultado posible `READY_FOR_ISOLATED_NATIVE_QA` es informativo para pruebas, NO autorización de despliegue ni de inicio del motor.
+- `src/main/ipc/managed-engine-lease-qualification.test.ts`: escenarios de rechazo y candidato sintético completo. Todas las declaraciones del test son ficticias: no comprueban exclusividad real entre procesos. Pruebas **PASS en Windows (26/26 casos del contrato, 2026-11-04)**. El conjunto con las 18 pruebas de admisión previas tuvo **44/44 PASS**.
+
+### Pruebas posteriores antes de instalar implementación nativa
+
+- Dos procesos **distintos** deben competir por la misma identidad de motor: uno obtiene titularidad, otro es rechazado; repetir en perfiles Orca diferentes.
+- Cambiar la identidad canónica permite titulares de motores distintos, sin colisiones ni invasión de sesiones.
+- Liberación tras cierre normal y tras caída forzada del proceso poseedor. Ante abandono se requiere reconciliación, sin promoción automática a `READY`.
+- Probar mutex creado previamente por tercero, ACL insuficiente, propietario imposible de identificar, PID reciclado, proceso con mismo ejecutable pero otro Job Object y servicio con puerto ocupado.
+- Cierre inesperado mientras FastAPI queda en fase transitoria y abandono entre adquisición del lease y asociación del Job Object; nunca arrancar dos instancias.
+- Registrar evidencia de que WCB y cualquier motor previo siguen vivos e inalterados.
+
+**Gate 9B-C2 = CONTRATO Y SUS TESTS PASS / LEASE NATIVO NO IMPLEMENTADO / PRUEBAS DE EXCLUSIVIDAD REAL NOT_RUN.** Mantener ambos PR DRAFT y el arranque operativo deshabilitado.
+### Evidencia Windows Gate 9B-C2 — contrato aprobado (2026-11-04)
+
+El operador ejecutó desde el clon QA `tc:node`: 19.600 archivos sin errores de tipos (12,67 s). Vitest reunió `managed-engine-operational-admission.test.ts` y `managed-engine-lease-qualification.test.ts`: **2 archivos PASS, 44 pruebas PASS (44)**, duración 480 ms, marcador `GATE 9B-C2 LEASE CONTRACT QA: PASS`.
+
+Las advertencias Vite sobre futura carga ESM/CommonJS mediante `configLoader: native` fueron no bloqueantes.
+
+Esta evidencia **solo valida decisiones puras sobre datos sintéticos**, no mutexes, locks ni exclusión entre procesos reales. El mecanismo nativo y la verificación Windows multiproceso permanecen pendientes; está prohibido interpretar `READY_FOR_ISOLATED_NATIVE_QA` como permiso de arranque de FastAPI operativo.
+## Gate 9B-C2-N — Candidato nativo Windows de exclusividad (2026-11-04)
+
+**Estado: IMPLEMENTADO EN RAMA / COMPILACIÓN MSVC NOT_RUN / PRUEBAS NATIVAS NOT_RUN.** El resultado anterior del contrato puro (44/44 PASS) se mantiene independiente.
+
+La versión QA de `native/windows-security` incorpora:
+
+- `src/managed-motor-lease.h/.cc`: `acquireManagedMotorLease(sha256LowercaseHex)` crea **atómicamente** un mutex denominado `Global\Orcastrator.Gate9B.C2.QA.<digest>` con `CreateMutexExW` y `CREATE_MUTEX_INITIAL_OWNER`. La identidad debe ser hexadecimal en minúsculas, exactamente 64 caracteres. La fuente confiable de identidad canónica de producción sigue pendiente.
+- El descriptor de seguridad se construye con el SID del usuario actual, SYSTEM y administradores, sin herencia de handle, se aplica a la creación y se relee la DACL para comparar su contenido antes de dar por adquirido el recurso. Fallos de seguridad, permisos o nombre ajeno: **fail-closed**. La prueba QA no presupone que otras cuentas puedan adquirir el recurso; es un alcance global de nombre, con acceso limitado intencionalmente.
+- Si el nombre ya existe, incluso si fue creado por otro proceso, devuelve `HELD_BY_OTHER`. No espera, no abre su Job Object, no se apropia ni termina procesos. Una creación nueva devuelve **solo** `ACQUIRED_REQUIRES_RECONCILIATION` y un handle opaco con `snapshot()`/`close()`. La exclusividad nativa no es prueba de que no queda un servidor anterior.
+- El wrapper mantiene la titularidad en el hilo principal de Node/N-API (los mutex Windows son *thread-affine*); `close()` libera su propia adquisición mediante `ReleaseMutex` y cierra el handle. La terminación inesperada del proceso hace que Windows libere su handle. La creación/abandonos en procesos ajenos jamás habilitan automáticamente un nuevo motor.
+- `binding.gyp`, `addon.cc`, `index.js`, `index.d.ts`, `src/shared/windows-security-addon.ts` y dos mocks de tests adaptados. **No existe ningún IPC de arranque operativo ni invocación desde el renderer.**
+- `tests/fixtures/orca-gate9c2-lease-worker.cjs` y `src/main/ipc/managed-motor-lease-windows.test.ts`: escenarios con procesos Node reales en Windows, sin puertos ni credenciales. Comprueban competencia por una identidad desde perfiles sintéticos distintos, liberación normal, caída del propietario y adquisición nueva con reconciliación obligatoria, y ausencia de colisión para identidades distintas. Un segundo intento dentro del mismo proceso se rechaza; todas las pruebas usan recursos creados por ellas y expiran en un máximo de 20 segundos.
+
+**Garantías que NO están probadas ni resueltas:** exclusividad entre usuarios de Windows distintos (la DACL restringida niega su adquisición y podría manifestarse `ACCESS_DENIED`); servicios de varios usuarios bajo el mismo motor; titularidad asociada a instalación confiable y generación de motor; persistencia de una marca de fallo entre muertes del proceso; mitigación de mutex pre-creado por otro proceso bajo la misma cuenta (debe rechazarse, no adoptarse); manejo de cambios de hilo y proceso durante actualización; integración con Job Object y pruebas de ausencia de listeners/propietarios previos. En particular, un mutex recién creado después de una muerte anterior no demuestra estado limpio: la reconciliación independiente **sigue siendo obligatoria**.
+
+Validación requerida en Windows QA: `pnpm.cmd run tc:node`, `pnpm.cmd exec node-gyp rebuild --directory native/windows-security`, Vitest de `managed-engine-operational-admission.test.ts`, `managed-engine-lease-qualification.test.ts` y `managed-motor-lease-windows.test.ts`. Se esperan 44 casos del contrato y 4 nativos adicionales si todo funciona. Cualquier error bloquea el Gate, sin relajar aserciones.
+
+No usar GitHub Actions, no fusionar los PR, no tocar WCB, el puerto 8765 ni el motor productivo. La activación real permanece expresamente **NO AUTORIZADA**.
+
+## Evidencia operadora 9B-C2-N — PASS real Windows (2026-11-04)
+
+El operador ejecutó `pnpm run tc:node`: **19.601 archivos sin errores de tipos** (13,26 s). `node-gyp 12.3.0`, Node 22.23.4 Windows x64, Python 3.13.5 y VS2026/MSBuild compilaron `managed-motor-lease.cc` y generaron `orca_windows_security.node`; el resultado concluyó `gyp info ok`. Vitest ejecutó **3 archivos, 48/48 tests PASS**, 1,35 s, con marcador `GATE 9B-C2 NATIVE INTERPROCESS QA: PASS`. Warnings Vite ESM/CJS informativos.
+
+Clasificación: **9B-C2-N PASS para competencia entre procesos Node sintéticos de la misma sesión Windows**; incluye rechazo del competidor bajo otra etiqueta de perfil, cierre normal, liberación tras caída, exclusividad entre identidades diferentes y comprobaciones de parámetros. No existe evidencia de coordinación entre distintas sesiones/usuarios Windows, ni de exclusividad ligada a una instancia de motor real, ni de compatibilidad con ACL de un servicio operativo. Aun adquiriendo un mutex, debe ejecutarse un censo independiente del motor/puertos y verificarse identidad, proceso y Job Object antes de arrancar. **Activación operativa NO AUTORIZADA**.
+
+## Gate 9B-C3 — Reconciliación posterior al lease (contrato en QA)
+
+Estado: **política y tests PASS (28/28 Windows); sensor nativo de procesos/puertos NOT_IMPLEMENTED**. La aprobación C2-N obtenida en Windows (48/48) no prueba que no exista un proceso FastAPI anterior.
+
+El módulo puro `src/main/ipc/managed-engine-reconciliation.ts` evalúa exclusivamente evidencias *que en una versión futura deberán estar firmadas por el main/native confiable*, jamás por renderer o variables de entorno sin validación. Requiere instalación y ejecutable verificados, checkout/data-root staging privados, identidad/generación y handle lease presentes, puerto efímero staging, censo posterior al lease, ningún listener (incluido uno propio anterior), ausencia de procesos y Job Objects residuales, y preservación de WCB.
+
+El máximo veredicto `READY_FOR_DISPOSABLE_STAGING_QA` es informativo: **no arranca ni autoriza la ejecución operativa**. Los métodos C3 no hacen IO, no abren sockets, no recorren procesos ni consumen credenciales.
+
+`src/main/ipc/managed-engine-reconciliation.test.ts` incluye **28 escenarios** sobre declaraciones sintéticas: candidato ideal, 26 rechazos y pureza. Rechaza explícitamente perfil NORMAL, puerto reservado operacional, censo hecho antes del lease (carrera TOCTOU), servicio extranjero o propio aún activo, árbol huérfano o desconocido, estado Job Object dudoso y aislamiento de WCB no probado. Pruebas de contrato en Windows **28/28 PASS, 2026-11-04** (Vitest 448 ms).
+
+Gate C3 REAL aún necesita desarrollar un *sensor* Windows de lectura que asocie puerto y servicio con PID+fecha de creación e identidad del ejecutable, además de una garantía de que el intento de bind ocurra mientras el lease siga retenido. Nunca adoptar o terminar un proceso por PID/puerto; si la identidad es dudosa, bloquear. La evidencia del sensor y su coherencia no pueden ser reemplazadas por el PASS de una política pura.
+
+Se mantiene C2-N aprobado en QA sintético, ambos PR DRAFT, sin GitHub Actions ni modificaciones a WCB.
+
+### Evidencia C3 recibida del operador — 2026-11-04
+
+`git pull --ff-only` avanzó a `8fdbfc5c2c`. El comando `pnpm run tc:node` terminó **sin errores de TypeScript en 19.603 archivos** (11,91 s). La prueba `managed-engine-reconciliation.test.ts` obtuvo **1 archivo / 28 pruebas PASS**, 448 ms y marcador `GATE 9B-C3 RECONCILIATION CONTRACT: PASS`. Las advertencias ESM/CJS de Vite fueron no bloqueantes.
+
+Alcance del PASS: contrato puro sobre evidencia sintética, no inspección Windows real de listeners/procesos. El sensor real es el siguiente requisito, sin habilitar arranque.
+
+## Gate 9B-C3-B — Sensor Win32 TCP en modo lectura (CANDIDATO, NOT_RUN)
+
+Tras la confirmación **C3-A contrato 28/28 PASS** y `tc:node` sin errores en **19.603 archivos**, el fork de Orca contiene una nueva capacidad de *observación*, sin autorización de arranque:
+
+- `native/windows-security/src/managed-listener-census.h/.cc`: `inspectManagedQaTcpListeners(port)` consulta las dos familias `AF_INET` y `AF_INET6` con `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)`. Busca únicamente el puerto solicitado; requiere estados `MIB_TCP_STATE_LISTEN`. Si no puede completar cualquiera de las dos tablas, devuelve `UNKNOWN` y nunca `NO_LISTENER`. Las tablas se reintentan con límites de memoria y cantidad de filas.
+- Para cada listener, captura PID, creación del proceso (`GetProcessTimes`: FILETIME como string) y ruta del ejecutable (`QueryFullProcessImageNameW`) cuando Windows permite `PROCESS_QUERY_LIMITED_INFORMATION`. Un permiso insuficiente deja `identityVerified=false`, pero **sigue considerándose listener existente**. La ruta queda únicamente en el addon principal; no publicarla al renderer, a telemetría ni al usuario.
+- La API se limita a puertos de QA 1024..65535 y rechaza específicamente 8765, 8768, 8769 y 18765. No abre sockets, ni asigna puertos, ni crea, mata o adopta procesos. Los resultados son *snapshots* y no un candado atómico.
+- `binding.gyp` enlaza `iphlpapi.lib` y `ws2_32.lib`, `addon.cc` registra la exportación y el paquete TypeScript la ofrece en `index.d.ts` y `src/shared/windows-security-addon.ts`. Los mocks antiguos de Windows rechazan explícitamente su invocación.
+- `tests/fixtures/orca-gate9c3-tcp-owner.cjs` y `src/main/ipc/managed-listener-census-windows.test.ts` usan únicamente listeners efímeros `127.0.0.1:0` (puerto asignado por el kernel), verifican PID/FILETIME/ejecutable de un proceso propio y otro sintético, ausencia de listener tras cerrar ambos, rechazo de puertos reservados y supervivencia durante observación. Los procesos de prueba externos expiran en 20 s.
+
+**Estado: SENSOR TCP PASS 31/31 EN WINDOWS (2026-11-04).** Se esperan tres nuevos tests nativos; no adjudicar PASS hasta evidencia original del operador. Referencias oficiales de Microsoft: `GetExtendedTcpTable` y sus tablas IPv4/IPv6 (https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable), `GetProcessTimes` (https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes).
+
+**Límites de seguridad:** un puerto sin listener no demuestra ausencia de un servidor anterior que aún no hizo bind, ni de un árbol huérfano, ni de un Job Object previo. Tampoco impide una carrera entre snapshot y bind. La integración real requerirá mantener el lease nativo durante la observación, verificar por separado existencia de motor anterior y Job Object, verificar que el bind efectivo coincida con la identidad esperada y conservar bloqueo ante cualquier `UNKNOWN`. Prohibido ejecutar motor operativo o tocar WCB.
+
+
+### Evidencia de Windows C3-B — 2026-11-04
+
+El operador confirmó Vitest **2 archivos / 31 pruebas PASS**, duración 772 ms, marcador `GATE 9B-C3B TCP CENSUS QA: PASS` (inicio 09:10:37 hora local). La secuencia anterior incluía compilación nativa; el fragmento compartido en este turno corresponde al resultado final de Vitest y su sentinel, no detalla nuevamente la salida de MSVC. Se certifica el comportamiento del sensor con listeners sintéticos TCP; no se certifica ausencia de motores huérfanos sin puertos. Siguiente Gate 9B-C3-C: identidad de procesos previamente registrados usando PID y tiempo de creación Win32, sin terminar procesos ajenos.
+
+
+## Gate 9B-C3-C — Sonda Win32 de identidad de proceso registrado (CANDIDATO / NOT_RUN)
+
+Implementación QA **read-only** y sin autorización de arranque:
+
+- `native/windows-security/src/managed-recorded-process.h/.cc` implementa `inspectManagedQaRecordedProcess(pid, expectedCreationTimeTicks)`, consulta un PID **previamente conocido** mediante `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)`, lee su FILETIME mediante `GetProcessTimes`, consulta el estado de ese HANDLE y la ruta del ejecutable con `QueryFullProcessImageNameW`. No enumera procesos del host ni abre puertos, ni termina, inicia o adopta procesos.
+- Respuestas: `MATCH_RUNNING`, `MATCH_EXITED`, `PID_REUSED`, `NOT_RUNNING` o `UNKNOWN`. Una discrepancia de FILETIME rechaza atribuir el PID a la instancia anterior. Un error de permisos/identidad produce `UNKNOWN` en vez de afirmar ausencia. El dato `executablePath` solo podrá utilizarse en un módulo nativo/Electron-main confiable; nunca exponerse a renderer, logs ni telemetría.
+- La sonda se declara en `index.d.ts`, se exporta desde `addon.cc`, se compila en `binding.gyp` y se integra a `src/shared/windows-security-addon.ts`. Los mocks antiguos rechazan explícitamente su uso.
+- `src/main/ipc/managed-recorded-process-windows.test.ts` contiene tres pruebas con **procesos creados exclusivamente por la prueba**: identidad de un PID propio en escucha efímera y discrepancia de generación, identificación del mismo proceso Node sintético antes y después de su cierre, y validación negativa de PID/FILETIME. Reutiliza el fixture `tests/fixtures/orca-gate9c3-tcp-owner.cjs` con expiración de 20 segundos.
+- **No existe aún** un journal persistente autenticado que proporcione `PID+creationTimeTicks` del motor anterior ni una compuerta que corrobore todos los descendientes del Job Object. `NOT_RUNNING`, `PID_REUSED` y `MATCH_EXITED` **no acreditan** que todo el árbol del motor anterior haya terminado. C3-C es una prueba *parcial* de identidad, no una reconciliación completa ni autorización para iniciar producción.
+- Estado: **PASS en Windows**: 3 archivos / 34 pruebas aprobadas en ejecución conjunta (2026-11-04). Las 31/31 pruebas C3-B previas continúan siendo evidencia histórica independiente. No ejecutar GitHub Actions, no fusionar ramas, no tocar WCB ni los servicios existentes.
+
+
+### Evidencia C3-C Windows final — 2026-11-04
+
+El operador repitió la suite C3 después de la corrección del tratamiento `UNKNOWN` (`b316a01a`): **3 archivos / 34 pruebas PASS**, Vitest 826 ms, marcador `GATE 9B-C3C RECORDED PROCESS QA: PASS`. Esta evidencia valida la sonda de PID+FILETIME con procesos Node propios/sintéticos; no aporta evidencia adicional del build MSVC ni autoriza control sobre motores reales. `UNKNOWN` sigue siendo un resultado bloqueante, aunque aceptado como observación válida tras la muerte del proceso sintético.
+
+**C3-C: PASS para lectura de identidad registrada en QA.** C3-D deberá diseñar identidad del propietario previa y posterior a caída, registro resistente a alteraciones/roturas y prueba del árbol de procesos/Job Object completo, siempre sin adopción o terminación de procesos ajenos. Hasta entonces, motor operativo BLOCKED.
+
+## Gate 9B-C3-D — Contrato de journal de propietario y recuperación conservadora (CANDIDATO)
+
+Estado al 2026-11-04: **POLÍTICA PURA PASS EN WINDOWS, 38/38 (2026-11-04)**. Gate C3-C obtuvo 34/34 PASS (suite de procesos sintéticos). C3-D no constituye un sistema de journal persistente ni permite arrancar el motor operativo.
+
+Hallazgo técnico: el Job Object privado de `native/windows-security/src/managed-job-process.cc` es **anónimo/no heredable** y se cierra con el propietario. Una nueva instancia no puede volver a abrirlo por nombre para consultar su árbol anterior. Aun si el PID principal ya no existe, no hay evidencia suficiente de que todo el árbol finalizó. Se debe conservar evidencia confiable del dueño anterior, verificar proceso/puerto tras tomar el lease, y bloquear estados desconocidos.
+
+Artefactos:
+
+- `src/main/ipc/managed-engine-previous-owner-recovery.ts`: evaluador **sin IO** de un contrato de evidencia futura. Exige `STAGING_LOCAL`, fuente nativa-main confiable, lease propio retenido, identidad coincidente, journal íntegro/atestado, identidad PID+FILETIME del propietario verificada, y **solo** dos posibles estados lógicos: raíz nueva QA creada atómicamente con evidencia, o cierre limpio de la generación anterior. Después requiere censo de listener y procesos tras el lease, ejecutable y raíz privada verificados, y aislamiento WCB.
+- `src/main/ipc/managed-engine-previous-owner-recovery.test.ts`: escenarios sintéticos de aceptación limitada y rechazos de journal ausente, ilegible, corrupto, estado `STARTING`/`RUNNING`/`CRASHED`/`UNKNOWN`, antigua Job Object con descendientes o contador incierto, PIDs reutilizados, listener/árbol aún existentes, y WCB no comprobado. **38/38 PASS en Windows.**
+- En `CLEAN_STOP` exige demostración independiente y confiable de que el cierre corresponde al Job Object que esta misma generación poseía y que se cerró con cero descendientes activos. El `snapshot()` posterior a `close()` devuelve cero por contrato, por lo que **no puede usarse solo como evidencia histórica**: debe documentarse un protocolo de terminación y verificación previo al cierre.
+- Un journal escrito en JSON sin protección de integridad **no puede** marcarse `ATTESTED` por su propia declaración. Ninguna booleana procedente de renderer, entorno o archivo editable se considera autoridad; el contrato es puro y una suite de tests no autentica datos de producción.
+- **Caída inesperada:** siempre devuelve `BLOCKED: INTERRUPTED_OWNER_REQUIRES_MANUAL_RECONCILIATION` hasta que exista un procedimiento externo independiente y fiable de recuperación. No añadir heurísticas de borrado de lock, kill por PID ni adopción de servicios.
+- El máximo estado `READY_FOR_ADDITIONAL_ISOLATED_QA` solo clasifica un paquete de evidencia sintético para continuar pruebas, no otorga permisos de arranque de FastAPI o despliegue.
+
+Pendientes posteriores: diseñar journal de generación persistente con raíz separada, integridad/propietario comprobables, escritura atómica/recuperación a prueba de interrupciones; sensor de descendientes y proceso previo; reconciliación tras crash sin asumir que el Job Object privado todavía existe; prueba E2E bajo lease retenido y aprobaciones nativas independientes. WCB intocable; PRs DRAFT, sin GitHub Actions.
+
+
+### Evidencia Gate 9B-C3-D, contrato — PASS Windows (2026-11-04)
+
+El operador compartió la salida original de Vitest: **1 archivo PASS, 38 pruebas PASS**, duración **593 ms**, marcador `GATE 9B-C3D OWNER RECOVERY POLICY: PASS`. Se certifica **solo la política determinista con evidencia sintética**, no un journal persistente firmado ni una recuperación de procesos Windows reales. La protección ante journal corrupto, ausencia de registro, dueño anterior interrumpido y estado de Job Object no verificable sigue bloqueando un nuevo arranque. Siguiente tramo: diseño y calificación del journal persistente aislado QA; no conectar a motor operativo ni WCB.
+
+## Gate 9B-C3-E-A — Journal persistente exclusivamente QA (CANDIDATO / NOT_RUN)
+
+Se aprovechan mecanismos ya existentes en Orca: `src/shared/secure-file.ts` (`writeDurableSecureJsonFile`) publica un archivo temporal con permisos restringidos, fsync y rename; `src/shared/secure-path-windows-acl.ts` (`restrictWindowsPathSync`, `readPrivateWindowsFile`) verifica DACL de raíz y archivo al leer. No se usa la API operativa de gestión de motores ni la configuración de WCB.
+
+### Implementación y alcance autorizado
+
+- `src/main/ipc/managed-previous-owner-journal-qa.ts`: journal persistente **telemetría sintética no autenticada**, limitado al clon `ORCASTRATOR-DESKTOP-QA/orca`, Windows, flag de pruebas `ORCA_GATE9C3E_TEST_ONLY=1`, y únicamente a una raíz temporal nueva *hija directa de* `os.tmpdir()` con prefijo `orca-gate9c3e-owner-`. Rechaza otras ubicaciones, perfiles y symlinks de raíz; no usa rutas arbitrarias para registrar datos del motor real.
+- Esquema estricto y acotado (máximo 16 KiB) con identificador SHA-256 sintético de motor, UUID de generación, PID+FILETIME del propietario, PID+FILETIME del proceso asignado, fase, revisión, digest anterior y timestamp. Las únicas transiciones publicables son `PREPARING → JOB_ASSIGNED → CLEAN_STOP`, sin cambios de dueño/generación y con una cadena de revisiones monotónica.
+- Escribe snapshots atómicos y con permisos de archivo restringidos; los lee mediante el lector nativo que comprueba DACL. Truncamiento, corrupción, digest incoherente y registros previos ilegibles **bloquean la escritura siguiente**. `MISSING` no significa `CLEAN_STOP` y no habilita ningún arranque.
+- Un SHA-256 de un registro **no autentica al autor ni previene rollback o reemplazo deliberado por un mismo usuario**. La implementación no fabrica la bandera `journalIntegrity='ATTESTED'`: cada lectura devuelve `QA_RECORD_UNATTESTED` y cada escritura `QA_PERSISTED_UNATTESTED`. Incluso una fase `CLEAN_STOP` persistida no prueba que se cerró un Job Object real.
+- No hay API IPC/renderer, no se enlaza esta telemetría con `evaluatePreviousOwnerRecovery` de C3-D y no se abre ningún puerto ni se inicia/termina proceso. No tocar WCB ni el motor operacional.
+- `src/main/ipc/managed-previous-owner-journal-qa.test.ts`: 12 casos Windows QA usando solo archivos en directorios temporales desechables; incluyen persistencia, cadena correcta, rechazo de salto de fase/revisión/identidad, archivos truncados, contenido alterado, rutas fuera de TEMP y falta de opt-in.
+
+### Estado / próximos controles
+
+**E-A PASS en Windows: 1 archivo, 12/12 tests, 1,79 s (2026-11-04).** Si aprueba, siguiente etapa C3-E-B debe tener un escritor *nativo real* ligado a generación+lease mantenido, con aislamiento de perfil, prueba de posesión del Job Object previo y semántica ante cortes eléctricos; ningún checksum o ACL por sí solo otorga confianza de arranque. Además deben resolverse concurrencia de escritores, rollback, proceso huérfano y reconciliación post-crash. Ambos PR DRAFT, sin GitHub Actions ni merge.
+
+### Evidencia Windows Gate 9B-C3-E-A (2026-11-04)
+
+El operador compartió la salida original de Vitest: **1 archivo PASS, 12/12 pruebas PASS**, duración 1,79 s, marcador `GATE 9B-C3E QA JOURNAL: PASS`. Certifica persistencia sintética de QA y rechazo de corrupciones; no demuestra atestación nativa, protección ante rollback, concurrencia de escritores ni integridad ante atacante con la misma cuenta.
+
+## Gate 9B-C3-E-B — Escritor de journal con lease nativo retenido (CANDIDATO, NOT_RUN)
+
+- `native/windows-security/src/managed-motor-lease.cc` incorpora `VerifyManagedMotorLeaseOwnerForQa`: verifica un objeto nativo `ManagedMotorLease` real (no un snapshot JS), estado HANDLE retenido, hilo propietario Windows y el SHA-256 del motor. Devuelve identidad PID y FILETIME del proceso dueño. No adquiere un nuevo lease ni otorga permisos de arranque. Una `napi_type_tag` de Node-API se aplica al `ObjectWrap` y es comprobada antes de `napi_unwrap`, para impedir que copiar un prototipo JavaScript sobre otro objeto se confunda con un lease válido.
+- La exportación `verifyManagedMotorLeaseOwnerForQa` está registrada en `addon.cc`, declarada en `index.d.ts`, expuesta en `index.js`/`src/shared/windows-security-addon.ts`; los mocks rechazan uso inesperado. Requiere **recompilar el addon nativo**.
+- `src/main/ipc/managed-previous-owner-lease-journal-qa.ts` publica el registro solo si el verificador nativo confirma el mismo SHA-256 y PID+FILETIME del dueño; hace otra verificación al terminar. Toda la operación de escritura de archivo es sin `await`, en la misma llamada síncrona del hilo dueño. Si falla, bloquea; nunca marca el registro como autenticado.
+- `src/main/ipc/managed-previous-owner-lease-journal-qa.test.ts`: **6 tests nuevos NOT_RUN**, solo en el clon QA, usando mutex real de identidad sintética y archivos TEMP aislados. Prueban escritura protegida, falso handle JS, handle cerrado, competidor/motor distinto, PID/FILETIME falso y negativa a sobrescribir journal `PREPARING` con otra generación.
+- **Límite explícito:** las APIs de E-A y E-B son de laboratorio; el escritor E-A sin lease sigue disponible, la prueba de un handle actual no identifica al autor histórico y un atacante bajo el mismo usuario todavía puede manipular archivos y recrear hashes. No declarar `journalIntegrity='ATTESTED'`. No existe todavía un journal protegido contra rollback ni una prueba completa del Job Object anterior. No conectar este módulo a IPC, renderer o procesos operativos.
+
+Estado E-B: **18/18 tests Windows QA PASS, 2026-11-04**, sin nueva evidencia explícita de typecheck/MSVC en el fragmento recibido. En Windows QA ejecutar `tc:node`, `node-gyp rebuild --directory native/windows-security`, y Vitest de `managed-previous-owner-journal-qa.test.ts` más `managed-previous-owner-lease-journal-qa.test.ts`. Si todo aprueba, se esperan **18/18 tests en 2 archivos** (12 E-A + 6 E-B). WCB, servicio FastAPI y puertos operativos intocables; ningún GitHub Action o merge.
+
+### Evidencia Gate C3-E-B Windows — 2026-11-04
+
+El operador aportó Vitest **2 archivos PASS, 18 pruebas PASS**, duración 1,64 s, y marcador `GATE 9B-C3E LEASE JOURNAL QA: PASS`. Se certifica la ejecución de pruebas del lease nativo y journal aislado; el fragmento **no contiene el log nuevo de MSVC ni de TypeScript**, por lo que no se atribuye de manera independiente su PASS. Esta fase valida resistencia al objeto JS falso/handle cerrado/identidad no coincidente y el encadenamiento del journal sintético. No equivale a un journal firmado resistente a rollback, ni evidencia de ausencia de descendientes después de crash, ni autorización para FastAPI operativo.
+
+## Gate 9B-C3-E-C — Cierre limpio del Job Object privado, evidencia local QA (CANDIDATO)
+
+**Estado al 2026-11-04:** código C++ y pruebas sintéticas publicados en rama DRAFT, **MSVC/TypeScript/tests NOT_RUN**. La etapa anterior C3-E-B obtuvo **18/18 pruebas Windows QA PASS**, no un permiso de arranque.
+
+- En `native/windows-security/src/managed-job-process.cc`, la clase `ManagedJobProcess` expone `closeIfEmptyForQa()`. Utiliza los handles **que ella misma creó y conserva**, nunca PID enumerados o Job Objects ajenos. Antes de cerrar, verifica `WaitForSingleObject` sobre el proceso raíz (debe indicar salida) y `QueryInformationJobObject(JobObjectBasicAccountingInformation)` sobre su Job Object (debe tener `ActiveProcesses == 0`).
+- Si el proceso raíz sigue activo devuelve `ROOT_STILL_RUNNING`; si la raíz terminó pero queda un miembro activo, `DESCENDANTS_STILL_RUNNING`; ante error o verificación imposible, `UNKNOWN`; tras un cierre anterior, `ALREADY_CLOSED`. **Ninguno de estos cuatro estados emite prueba de limpieza.** Si ambos controles pasan, cierra el Job Object vacío y el handle de raíz, y devuelve `CLOSED_EMPTY_QA_ONLY` con PID/FILETIME, contador observado cero y marcas explícitas `rootExitedBeforeClose` y `notHistoricalAttestation`.
+- Esta función no añade capacidades de terminación ni adopción: el método original `close()` mantiene su semántica de kill-on-close, pero la nueva ruta **no lo llama sobre un Job Object con miembros activos**. Todos los procesos de las pruebas son creados por el propio test dentro de `%TEMP%`.
+- `native/windows-security/index.d.ts` documenta el resultado discriminado; `src/main/ipc/managed-job-clean-close-windows.test.ts` incorpora **3 pruebas nativas Windows NOT_RUN**: salida limpia de raíz y Job Object vacío, rechazo de raíz activa, y rechazo cuando la raíz finaliza dejando un descendiente sintético.
+- El resultado `CLOSED_EMPTY_QA_ONLY` es **un objeto JS retornado al mismo dueño**, no un certificado verificable por una nueva instancia tras una caída, ni evidencia autenticada de `CLEAN_STOP` del journal anterior. No se ha enlazado a un escritor de journal confiable ni al arranque del motor; requiere protección anti-rollback, identidad y generación nativas, y persistencia duradera de cierre autenticado antes de cualquier recuperación.
+
+Próximo QA Windows: `pnpm.cmd run tc:node`; `pnpm.cmd exec node-gyp rebuild --directory native/windows-security`; Vitest dirigido a `managed-job-native-windows.test.ts`, `managed-job-clean-close-windows.test.ts`, `managed-previous-owner-journal-qa.test.ts`, `managed-previous-owner-lease-journal-qa.test.ts`. Total esperado **23/23 en 4 archivos** (2 + 3 + 12 + 6), sujeto a evidencia original. Sin GitHub Actions, merges, puertos operativos, WCB ni FastAPI de producción.
+
+
+### Primera ejecución Windows C3-E-C: 22/23 FAIL; prueba sincronizada (2026-11-04)
+
+El operador compartió Vitest **4 archivos: 3 PASS / 1 FAIL; 22/23 casos PASS**, 12,82 segundos. Falló únicamente `managed-job-clean-close-windows.test.ts`, escenario raíz finalizada con descendiente activo, por `GATE9C3EC_SYNTHETIC_JOB_TIMEOUT` tras 12 segundos. No se observó una aserción nativa `closeIfEmptyForQa` fallida: el test no alcanzó la condición previa `!rootRunning && activeProcesses >= 1`. **C3-E-C permanece FAIL / RETEST_REQUIRED**.
+
+La versión anterior del fixture ejecutaba `spawn()` y `process.exit(0)` de inmediato. Esa secuencia introducía una carrera entre el alta del descendiente y la salida de la raíz; el diagnóstico es una **hipótesis técnica basada en el fixture**, no una certeza sobre el estado kernel (faltó el snapshot al timeout). Corrección **solo del test** en `ecc28d9a9e6f75441e9662d03fb7af5d46061433`: la raíz sintética permanece viva hasta que el test observa `rootRunning && activeProcesses >= 2` con el handle original del Job Object. Luego el test escribe una señal `allow-synthetic-root-exit` en el TEMP privado para que **solo esa raíz** termine y espera `!rootRunning && activeProcesses >= 1`. Solo entonces exige `DESCENDANTS_STILL_RUNNING` y comprueba que el Job Object no fue cerrado. En cleanup, `close()` afecta únicamente al Job Object creado por el test.
+
+También se agregó diagnóstico de snapshot `rootRunning`/`activeProcesses` en caso de nuevo timeout, commit `2e89ef8b4f8db1841647c34ea985ca8ccc6a1c25`, para evitar inferir causas sin datos. **No se modificó C++, la lógica de cierre nativo, WCB ni el motor operativo.** Repetir TypeScript + cuatro suites Vitest; compilación nativa no requerida si el addon de la prueba anterior se conserva. Aprobación solo con 23/23 PASS y evidencia original. Sin GitHub Actions ni merge.
+
+
+### Segunda repetición Windows Gate 9B-C3-E-C — 22/23 FAIL, causa libuv identificada (2026-11-04)
+
+El operador repitió la prueba con handshake y snapshot. Resultado **4 archivos, 3 PASS / 1 FAIL; 22/23 tests PASS**, duración 13,28 s, marcador `GATE9C3EC_RETEST_FAILED`. La espera de la condición `!rootRunning && activeProcesses >= 1` venció; snapshot del kernel: `{"closed":false,"pid":31396,"creationTimeTicks":"134382734135719595","rootRunning":false,"activeProcesses":0}`. La observación prueba que **raíz y descendiente ya no estaban activos**, aunque el handle del Job Object original seguía abierto. No hubo una aserción fallida de `closeIfEmptyForQa()`, ya que no se llegó a llamarlo para ese escenario.
+
+Investigación: Node/libuv bajo Windows suele asociar procesos hijos **sin** `detached` a un segundo Job Object interno para terminarlos cuando sale el padre. Esto explica plausiblemente que desapareciera el descendiente al terminar la raíz, aun cuando el Job Object exterior de Orcastrator seguía abierto. La documentación de Node recomienda usar `detached: true`, `stdio: 'ignore'` y `child.unref()` para que un hijo continúe vivo tras salir su padre. libuv no añade `CREATE_BREAKAWAY_FROM_JOB` con el modo detached, de forma que el descendiente debería seguir perteneciendo al Job Object de Orcastrator (Microsoft indica que la pertenencia de hijos se hereda por defecto). Referencias: https://nodejs.org/api/child_process.html#optionsdetached, https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects y https://github.com/libuv/libuv/blob/v1.x/src/win/process.c .
+
+Corrección **solo del test** en `src/main/ipc/managed-job-clean-close-windows.test.ts`: commits `35f2ec5e813162eb0db36bdba7a256654ad25ecd` y `7e4d0e48693afc4ba31c6afddb02408cb8994f4e`. El fixture ahora genera un descendiente `Node -e` con `detached: true`, `stdio: 'ignore'` y `unref()`; exige un archivo `grandchild-ready` escrito por el propio descendiente **y** contador del Job Object original `rootRunning && activeProcesses >= 2`. Espera otros 250 ms para descartar una pertenencia transitoria. Solo entonces ordena la salida de la raíz mediante señal de archivo privada y exige nuevamente `!rootRunning && activeProcesses >= 1` **antes** de verificar `DESCENDANTS_STILL_RUNNING`. Si el proceso no permanece dentro del Job Object, la prueba sigue fallando y conserva diagnóstico de snapshot.
+
+Estado: **Gate 9B-C3-E-C NOT PASS / RETEST_REQUIRED**. No cambiaron C++ ni el método de cierre. El addon nativo anterior puede reutilizarse; repetir TypeScript y las cuatro suites Vitest, esperar **23/23** antes de aprobar. WCB y FastAPI operativos intactos, sin GitHub Actions ni merge.
+
+
+### Gate C3-E-C — Verificación final Windows PASS (2026-11-04)
+
+Tercer ensayo tras el arreglo del fixture Node detached: el operador presentó Vitest **4 archivos / 23 pruebas PASS**, duración **1,76 s**, marcador `GATE 9B-C3E CLEAN JOB CLOSE QA: PASS` y hora de inicio de suite 11:04:39 local. Se considera **PASS en QA** el contrato de cierre del Job Object privado con raíz y descendientes sintéticos. El fragmento es de Vitest; no incluye salida nueva de MSVC ni `tc:node`. La prueba no autoriza un arranque de FastAPI y no acredita un journal histórico firmado ni recuperación de crash.
+
+## Gate 9B-C3-E-D — Cierre nativo y publicación del journal bajo el lease (CANDIDATO / NOT_RUN)
+
+**Base comprobada:** Gate C3-E-C **4 archivos/23 PASS**, 1,76 s, 2026-11-04. El cierre vacío del Job Object y el rechazo de un descendiente activo se comprobaron con procesos Node sintéticos en Windows. Esta nueva etapa E-D **aún no está probada**.
+
+### Implementación E-D aislada QA
+
+- `native/windows-security/src/managed-job-process.cc` asigna una etiqueta de tipo Node-API (`napi_type_tag`) al `ManagedJobProcess` creado por el addon y exporta `CloseRecordedManagedJobIfEmptyForQa(job, pid, ticks)`. Rechaza objetos JS (incluidos prototipos copiados), exige PID entero finito y FILETIME exacto de la instancia nativa y ejecuta directamente el método C3-E-C (sin confiar en una propiedad JS sobrescribible). No cierra un Job Object ajeno ni basado solo en un PID suministrado.
+- `native/windows-security/src/managed-job-process.h`, `addon.cc`, `index.js`, `index.d.ts` y `src/shared/windows-security-addon.ts` registran esa API **solo para QA**; los mocks de seguridad rechazan explícitamente su uso inesperado. Es necesario **recompilar C++**.
+- `src/main/ipc/managed-qa-clean-stop-journal.ts` acepta el journal TEMP de QA, el lease nativo propio y el Job Object creado por la prueba. Comprueba que el registro existente está en fase `JOB_ASSIGNED` revisión 2, y que su motor y propietario PID+FILETIME coinciden con el handle del mutex real. Llama a la operación nativa de cierre vacío con PID+FILETIME exactos del root registrado. Solo ante `CLOSED_EMPTY_QA_ONLY` escribe duraderamente la revisión 3 `CLEAN_STOP` usando el escritor con lease nativo de E-B.
+- La llamada no cede el hilo JavaScript durante las comprobaciones, cierre y escritura. Si hay bloqueo nativo (raíz viva/descendientes activos/identidad errónea) no se cambia el journal. Si falla la persistencia **después** de cerrar el Job Object, el journal previo permanece `JOB_ASSIGNED` o se considera corrupto/incompleto y **bloquea la recuperación**; no hay transición optimista.
+- `src/main/ipc/managed-qa-clean-stop-journal-windows.test.ts`: **6 pruebas sintéticas nuevas, NOT_RUN**: cierre vacío y persistencia UA, raíz activa, objeto falso y prototipo copiado, PID incorrecto, lease liberado, ausencia de fase `JOB_ASSIGNED`. Fixtures Node y archivos confinados al directorio QA temporal; cleanup cierra exclusivamente jobs propios.
+
+**Estado de confianza:** un resultado exitoso se llama `QA_CLEAN_STOP_PERSISTED_UNATTESTED`. Su journal todavía puede ser sustituido o revertido por procesos del mismo usuario. Un `CLEAN_STOP` de este archivo NO alimenta automáticamente la política C3-D, NO constituye una firma/autorización de arranque y NO demuestra que una nueva instancia pueda reconstruir el Job Object anterior después de un crash. El escritor primitivo de E-A sigue existiendo como herramienta QA, por lo que no existe garantía de «no bypass» en la ruta de telemetría.
+
+**QA siguiente:** En el clon aislado Windows, `pnpm.cmd run tc:node`; `pnpm.cmd exec node-gyp rebuild --directory native/windows-security`; Vitest de `managed-job-native-windows.test.ts`, `managed-job-clean-close-windows.test.ts`, `managed-previous-owner-journal-qa.test.ts`, `managed-previous-owner-lease-journal-qa.test.ts` y `managed-qa-clean-stop-journal-windows.test.ts`. Resultado previsto solo si todos aprueban: **5 archivos / 29 pruebas PASS** (23 previas + 6 nuevas). No tocar WCB, ni motor operativo, ni GitHub Actions, ni fusionar PRs.
+
+
+### Gate 9B-C3-E-D — Evidencia de QA Windows PASS (2026-11-04)
+
+El operador reportó `RUN v5.0.5` en el clon aislado Orca: **5 archivos / 29 pruebas PASS**, duración **2,33 segundos**, marcador exacto `GATE 9B-C3E-D NATIVE CLEAN STOP JOURNAL QA: PASS`, inicio de suite 11:27:43 hora local. Se confirma la suite sintética que enlaza identidad del Job Object real con lease nativo y transición QA no autenticada del journal. El fragmento compartido corresponde a Vitest y no vuelve a transcribir el build MSVC ni el typecheck; no atribuirles por separado un nuevo PASS.
+
+**C3-E-D PASS exclusivamente en QA.** La salida `QA_CLEAN_STOP_PERSISTED_UNATTESTED` no es testimonio firmado, no evita rollback/sustitución por aplicaciones del mismo usuario, no autentica generaciones históricas ni resuelve motores huérfanos tras crash. No conectar todavía al flujo de arranque operativo.
+
+## Gate 9B-C3-E-E — Cuarentena de journals históricos no autenticados (CANDIDATO)
+
+Estado al 2026-11-04: **9 pruebas adversariales Windows preparadas; typecheck y Vitest NOT_RUN**. E-D pasó 5 archivos y 29 pruebas; E-E no modifica el addon C++.
+
+### Amenazas bajo prueba
+
+El journal QA usa una cadena SHA-256 para detectar alteraciones accidentales, pero ese checksum **no tiene secreto**. Otra aplicación del mismo usuario con acceso al archivo puede recomputar el hash, falsificar `CLEAN_STOP`, reemplazar el PID/identidad SHA-256 del motor y hacer rollback a un journal anterior todavía válido. El testimonio JS `CLOSED_EMPTY_QA_ONLY` era válido en el proceso creador, pero no acredita la autoría de bytes leídos posteriormente de disco.
+
+### Nuevos artefactos
+
+- `src/main/ipc/managed-qa-historical-recovery-quarantine.ts`: clasificador read-only del journal QA que **siempre** devuelve `state='BLOCKED'`, `journalIntegrity='UNVERIFIED'` y `startupAllowed=false`. Diferencia `HISTORICAL_JOURNAL_MISSING`, `HISTORICAL_JOURNAL_UNVERIFIABLE`, `PREVIOUS_OWNER_INTERRUPTED_OR_UNVERIFIED` y `CLEAN_STOP_HISTORY_UNATTESTED`. Un `CLEAN_STOP` con checksum válido tampoco se promueve a `ATTESTED`.
+- `src/main/ipc/managed-qa-historical-recovery-quarantine.test.ts`: 9 pruebas Windows confinadas a archivos TEMP de QA: ausencia de journal; `PREPARING`; `JOB_ASSIGNED`; `CLEAN_STOP` íntegro; truncamiento; cambio sin actualizar hash; falsificación de CLEAN_STOP **con SHA-256 recomputado**; rollback byte a byte a un registro PREPARING con hash legítimo; inyección de campo `journalIntegrity: ATTESTED`. No inician motores, puertos ni procesos. **NOT_RUN**.
+- El gate **no implementa autenticación**: sólo prueba que no se confía en un archivo histórico no autenticado. El evaluador puro C3-D usa valores `TRUSTED_NATIVE_MAIN` sintéticos; todavía no existe un productor nativo capaz de atestarlos.
+
+### Bloqueos de arquitectura
+
+Para una recuperación automática futura tras crash se requiere atestación de propietario independiente de la cuenta que puede editar el journal, un contador/secuencia monotónica resistente a rollback, exclusión entre escritores y comprobación independiente de procesos sobrevivientes. SHA-256 simple, una clave recuperable por el mismo usuario o DPAPI con el mismo alcance del usuario no resuelven por sí solos este modelo de amenazas. Mientras no exista un ancla de confianza suficiente, las recuperaciones de dueño anterior deben permanecer bloqueadas y requerir reconciliación supervisada.
+
+Próximo QA: `pnpm.cmd run tc:node` y Vitest con las cinco suites E-D anteriores más `managed-qa-historical-recovery-quarantine.test.ts`. Si todas aprueban se esperan **6 archivos / 38 pruebas PASS** (29 previas + 9 nuevas). Sin recompilación C++, sin cambios a WCB, FastAPI operativo, GitHub Actions ni merges.
+
+
+### Evidencia final Windows C3-E-E — PASS (2026-11-04)
+
+El operador aportó salida de Vitest 5.0.5 desde el worktree aislado `ORCASTRATOR-DESKTOP-QA/orca`: **6 archivos PASS / 38 pruebas PASS**, duración **2,41 s**, inicio a las 11:35:00 (hora local), marcador exacto `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. Los escenarios de integridad, rollback y falsificación de checksum fueron aprobados en el alcance sintético. La salida transcripta no muestra una nueva compilación C++ ni salida de typecheck, no se declaran verificaciones extra a partir de ella.
+
+**C3-E-E PASS EN QA**, sin permiso de arranque. El resultado valida que el clasificador *de QA* siempre devuelve bloqueo al leer cualquier journal histórico no autenticado. No valida recuperación operacional, custodia de una clave exclusiva ni censo histórico de Job Objects privados. No convertir este resultado en `ATTESTED` ni en autorización para FastAPI.
+
+## Hito C3-E-E completado; transición a decisión C4 (2026-11-04)
+
+Gate C3-E-E fue revalidado por el operador: Vitest 6 archivos/38 pruebas PASS, 2,41 s, marcador `GATE 9B-C3E-E HISTORICAL JOURNAL QUARANTINE QA: PASS`. **No interpretar** el PASS como recuperación automática o confianza histórica.
+
+Queda definido el documento arquitectónico `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`: elección provisional de **recuperación supervisada y bloqueante tras crash** para MVP; un supervisor Windows con identidad separada se pospone a decisión explícita. No deben añadirse más fuentes de autorización basadas en SHA-256 no autenticado del mismo archivo; C4 prioriza diagnósticos read-only y una fuente de confianza real antes de nuevos lanzamientos.
+
+## Gate 9B-C4 — Decisión del operador y diseño C4-A de diagnóstico (2026-11-04)
+
+**D-C4-01 confirmada:** el operador eligió explícitamente **recuperación supervisada para el MVP**. Los procesos de recuperación automática o el servicio Windows de identidad separada quedan fuera del alcance del MVP. Esto no autoriza ni siquiera un arranque manual mientras falten verificaciones técnicas: journal histórico sin autenticar, PID desparecido o puerto aparentemente libre **NO** equivalen a proceso ausente.
+
+Contrato fuente de la decisión: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
+
+**C4-A candidato, 22 tests NOT_RUN:** `src/main/ipc/managed-supervised-recovery-diagnostic.ts` y su suite `.test.ts`. Proyección pura de evidencia sintética/no confiable hacia un DTO de estado exclusivamente `BLOCKED` y `startupAllowed:false`; conserva `UNKNOWN` ante observaciones antiguas o ausentes, no expone secretos/rutas ni invoca Windows/IPC/motores. No confundir una etiqueta de fuente `MAIN_NATIVE_CLAIM` con una atestación; no se integra aún con renderer o motor. QA previo `pnpm.cmd run tc:node` y Vitest de esta suite nueva; criterio 22/22 Windows antes de pasar a C4-B.
+
+## Gate 9B-C4-A — Windows 22/22 PASS; siguiente C4-B1 de procedencia (2026-11-04)
+
+El operador aportó Vitest **1 archivo / 22 pruebas PASS**, **479 ms**, sentinel `GATE 9B-C4A SUPERVISED RECOVERY DIAGNOSTIC QA: PASS`, inicio 11:53:07 local. C4-A valida únicamente la proyección pura de un diagnóstico que bloquea arranque, no adquisición de sensores reales.
+
+Tras confirmar recuperación supervisada para el MVP, se preparó `src/main/ipc/managed-supervised-recovery-provenance.ts` y una suite de 22 tests `managed-supervised-recovery-provenance.test.ts` **NOT_RUN**. C4-B1 valida coherencia sintética entre identidad/captura de lease, listener y proceso registrado, frescura de cada observación y que los censos fueron posteriores al lease; cualquier anomalía degrada a UNKNOWN. Una declaración `MAIN_NATIVE_CLAIM` sigue siendo **inverificable como origen** hasta que un recolector nativo real y acotado la produzca. Todos los resultados contienen `BLOCKED`, `startupAllowed:false`, `UNATTESTED_CLAIMS_ONLY`.
+
+El runbook se encuentra en el repo motor `docs/QA/ORCA-D02-GATE9B-C4B1-CLAIM-PROVENANCE-QA.md`. Próximo QA: TypeScript y **2 archivos / 44 pruebas** (22 C4-A + 22 C4-B1) sin recompilar C++. No activar IPC operativo, servicios Windows, GitHub Actions ni merges.
+
+## Gate 9B-C4-B1 — Windows PASS y C4-B2-A sensor propio preparado (2026-11-04)
+
+El operador ejecutó C4-A+C4-B1 en Windows QA: **2 archivos / 44 pruebas PASS**, 514 ms, marcador `GATE 9B-C4B1 SUPERVISED RECOVERY PROVENANCE QA: PASS`. Se aprueba la consistencia sintética de declaraciones, no la autenticidad de procesos históricos.
+
+Se añadieron `src/main/ipc/managed-qa-native-self-observation.ts` y `src/main/ipc/managed-qa-native-self-observation-windows.test.ts` (**8 pruebas preparadas NOT_RUN**) para C4-B2-A: lectura de sensores Win32 ya existentes únicamente sobre el PID propio de QA y listener propio loopback efímero, luego de verificar un lease nativo real. No se pide ni acepta un PID arbitrario; todos los resultados siguen `BLOCKED`, `startupAllowed:false`, `historicalProof:false`. No hay evidencia del motor anterior ni del Job Object histórico. Fuente de detalles y límites: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`.
+
+Próxima validación **3 archivos/52 pruebas** (22+22+8) en el clon Windows QA, TypeScript + Vitest, sin recompilar C++ ni tocar WCB/servicios operativos. Ambos PRs DRAFT; sin GitHub Actions ni merges.
+
+## Gate 9B-C4-B2-B — Windows 60/60 PASS; C4-C-A UI candidata (2026-11-04)
+
+El operador aportó Vitest **4 archivos / 60 pruebas PASS**, 1,69 s, inicio 12:21:21 local, marcador `GATE 9B-C4B2B SUPERVISED QA REVIEW PACKET: PASS`. Certifica solo la composición QA de observación nativa propia y cuarentena histórica, no el estado real de un motor anterior ni reinicio operativo.
+
+Se preparó C4-C-A, vista de diagnóstico supervisado en Electron que se monta **solo con estado de lifecycle QA**, sin nuevo IPC ni datos de procesos de producción. No incluye botones/acciones de reinicio, kill, borrado de mutex o adopción. Si falta el paquete de diagnóstico, muestra `Sin diagnóstico QA conectado`; cualquier paquete (incluso falso `ATTESTED`) se normaliza a **BLOQUEADO** sin mostrar rutas, secretos o PID históricos.
+
+Arquitectura: `docs/orcastrator/ORCA-D02-GATE9B-C4-RECOVERY-TRUST-BOUNDARY.md`. Nuevo QA **NOT_RUN**: 13 pruebas de modelado y 4 de React server-render, más 60 de regresión = **6 archivos / 77 pruebas**. Requiere `pnpm.cmd run tc:web` + `tc:node` + Vitest dirigido, no nueva compilación MSVC. UI aún no conectada a fuente de evidencia real; ambos PR DRAFT, sin GitHub Actions o merge.
+
+### Gate 9B-C4-C-A — Windows QA final PASS (2026-11-04)
+
+El operador entregó la salida de Vitest v5.0.5 del clon aislado Windows: **6 archivos PASS, 77/77 pruebas PASS**, **1,77 s**, inicio de suite **12:47:19 hora local**, marcador exacto `GATE 9B-C4C-A ELECTRON SUPERVISED RECOVERY PANEL QA: PASS`. Este resultado certifica en QA las 60 pruebas anteriores y 17 pruebas nuevas del modelo/SSR de la presentación bloqueada. El error anterior `TS6133` se corrigió en el test mediante eliminación del `import React` no usado (commit `457c2baadaedab407e65738bf969761b40118117`). El fragmento final facilitado muestra Vitest, **no reproduce por separado** las salidas de `tc:web`/`tc:node`; el PowerShell propuesto fallaría si esas compuertas hubieran terminado con error, pero no se afirma un log individual no presentado.
+
+**C4-C-A PASS únicamente en QA.** No hay captura de una ventana Electron abierta ni conexión del panel a una fuente de diagnóstico operativo. El panel muestra un estado por defecto bloqueado; no habilita reinicio, terminación ni certifica motores históricos o descendientes del Job Object. Ambos PRs siguen DRAFT y sin merge.
+
+## Gate 9B-C4-C-B — Estado de ciclo de vida QA de Electron como declaración de solo lectura (CANDIDATO)
+
+**Base confirmada:** C4-C-A, Vitest Windows 6 archivos/77 pruebas PASS, 1,77 s, marcador `GATE 9B-C4C-A ELECTRON SUPERVISED RECOVERY PANEL QA: PASS`. Este resultado no es prueba visual de ventana Electron ni incluye salida individual de typechecks.
+
+**C4-C-B aún NO verificado en Windows.** Para avanzar sin abrir un segundo canal IPC ni fingir autoridad histórica, la pantalla de recuperación reutiliza el endpoint ya existente y protegido `managed:qaEngineLifecycle`. El frontend `ManagedStatusSegment.tsx` solo monta el panel cuando el ciclo de vida QA está habilitado; pasa el estado QA observado que ya tenía el componente, sin agregar llamadas al motor.
+
+- `ManagedSupervisedRecoveryPresentation.ts`: agrega `describeQaLifecycleForRenderer(raw: unknown)`, validación por allowlist de fase (`STOPPED`, `STARTING`, `ONLINE`, `DEGRADED`, `RECOVERING`, `ERROR`, `STOPPING`) y propietario (`NONE`, `THIS_ELECTRON`). Una fase imposible, `ONLINE` con owner `NONE` o entrada malformada devuelven `NO_QA_SNAPSHOT` y bloqueo. Se ignoran `error_code`, port, restarts, tokens, paths y campos arbitrarios.
+- `ManagedSupervisedRecoveryPanel.tsx`: muestra una fila *Estado declarado del QA de Electron* sin sustituir la fila *Proceso actual* del paquete B2-B. Las observaciones se marcan `QA_LIFECYCLE_CLAIM_ONLY` y `UNATTESTED_LIFECYCLE_ONLY`; nunca equivalen a una verificación nativa de Job Object/PID del proceso anterior.
+- `ManagedStatusSegment.tsx`: pasa `qaLifecycle` desde el hook existente a `ManagedSupervisedRecoveryPanel`. **Sin nuevos métodos preload, IPC, handlers, sensores kernel, puerto, listener ni servicio Windows**. El panel mantiene `BLOQUEADO` y `startupAllowed:false` siempre.
+- `ManagedSupervisedRecoveryPresentation.test.ts`: **10 pruebas adicionales NOT_RUN** de ausencia de estado, phase/owner inválidos, ONLINE sin owner, fuga de secretos, fase RECOVERING no atestada, determinismo.
+- `ManagedSupervisedRecoveryPanel.test.tsx`: **4 pruebas SSR adicionales NOT_RUN**, ciclo de vida ausente, estado propio QA + historial todavía sin validar, sanitización y entrada contradictoria. C4-C-B suma **14 pruebas nuevas**, total acumulado de suites focales C4-A/B1/B2-A/B2-B/C-A/B: **6 archivos / 91 tests** (77 previas + 14).
+
+**Limitación crítica:** `qaEngineSupervisor` existente tiene su propio lifecycle de un child *sintético en ventana E2E oculta*; el estado `RECOVERING` **no es** autorización a recuperar un motor operativo. La decisión aprobada para el MVP mantiene recuperación supervisada. Esta modificación tampoco vuelve posible abrir un Job Object anónimo anterior ni autenticar journals del mismo usuario.
+
+Próximo QA: `pnpm.cmd run tc:web`, `pnpm.cmd run tc:node`, las seis suites focales C4-A/B1/B2-A/B2-B y las dos pruebas renderer ya incluidas. Criterio si realmente aprueba Windows: **6 archivos / 91 pruebas**, marcador `GATE 9B-C4C-B EXISTING QA LIFECYCLE DISPLAY: PASS`. No requiere recompilación MSVC. No tocar motor operativo/WCB, no GitHub Actions ni merges.

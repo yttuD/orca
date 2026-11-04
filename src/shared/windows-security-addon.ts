@@ -118,6 +118,21 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
       clearStdHandleInheritance: () => raw.clearStdHandleInheritance(),
       spawnDetachedIsolated: (file, commandLine, cwd, environmentBlock, onExit) =>
         raw.spawnDetachedIsolated(file, commandLine, cwd, environmentBlock, onExit),
+      // Opaque native job ownership: only main/native code may retain this handle.
+      // No renderer IPC and no production motor startup is wired here.
+      spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
+        raw.spawnManagedJobContained(
+          file, commandLine, cwd, environmentBlock
+        ),
+      closeRecordedManagedJobIfEmptyForQa: (job, pid, ticks) =>
+        raw.closeRecordedManagedJobIfEmptyForQa(job, pid, ticks),
+      acquireManagedMotorLease: (motorIdentitySha256) =>
+        raw.acquireManagedMotorLease(motorIdentitySha256),
+      verifyManagedMotorLeaseOwnerForQa: (lease, identity) =>
+        raw.verifyManagedMotorLeaseOwnerForQa(lease, identity),
+      inspectManagedQaTcpListeners: (port) => raw.inspectManagedQaTcpListeners(port),
+      inspectManagedQaRecordedProcess: (pid, ticks) =>
+        raw.inspectManagedQaRecordedProcess(pid, ticks),
       isolatedSpawnBreaksAwayFromJob: () => raw.isolatedSpawnBreaksAwayFromJob(),
       hasNativeExport: (name) => raw.hasNativeExport(name)
     }

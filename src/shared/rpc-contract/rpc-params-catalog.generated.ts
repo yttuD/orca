@@ -421,6 +421,7 @@ import {
 } from './linear-params'
 import { CreateProject } from './linear-project-create-params'
 import { LinkPreviewGetParams } from './link-preview-params'
+import { ManagedRpcParams } from './managed-rpc-params'
 import {
   ManagedRuntimeAgentParams,
   ManagedRuntimeCancelParams
@@ -1214,6 +1215,15 @@ export const RPC_PARAMS_BY_METHOD = {
   'linear.testConnection': WorkspaceSelection,
   'linear.updateIssue': IssueUpdateOfLinearParams,
   'linkPreview.get': LinkPreviewGetParams,
+  'managed.checkDeviceStatus': ManagedRpcParams,
+  'managed.getEvidence': ManagedRpcParams,
+  'managed.getExecution': ManagedRpcParams,
+  'managed.getHostIdentity': ManagedRpcParams,
+  'managed.listActivity': ManagedRpcParams,
+  'managed.listProjects': ManagedRpcParams,
+  'managed.listTasks': ManagedRpcParams,
+  'managed.presentReviewPacket': ManagedRpcParams,
+  'managed.registerDevice': ManagedRpcParams,
   'managedRuntime.cancel': ManagedRuntimeCancelParams,
   'managedRuntime.install': ManagedRuntimeAgentParams,
   'managedRuntime.remove': ManagedRuntimeAgentParams,

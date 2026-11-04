@@ -43,6 +43,13 @@ function installFakeAddon(
     grantAccess: unexpected,
     clearStdHandleInheritance: unexpected,
     spawnDetachedIsolated: unexpected,
+    // Security: ACL mocks must never be able to launch a native job child.
+    spawnManagedJobContained: unexpected,
+    closeRecordedManagedJobIfEmptyForQa: unexpected,
+    acquireManagedMotorLease: unexpected,
+    verifyManagedMotorLeaseOwnerForQa: unexpected,
+    inspectManagedQaTcpListeners: unexpected,
+    inspectManagedQaRecordedProcess: unexpected,
     isolatedSpawnBreaksAwayFromJob: unexpected,
     hasNativeExport: unexpected,
     grantAccessAsync: async (path, sid, accessMask, options) => {

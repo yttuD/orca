@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllGlobals())
 import { computeSha256Hex, exportMarkdownFile } from './ManagedTaskDetailTypes'
 
 describe('ManagedReviewPacketView & Types (D02-E)', () => {
@@ -50,14 +52,13 @@ describe('ManagedReviewPacketView & Types (D02-E)', () => {
     const appendChildMock = vi.fn()
     const removeChildMock = vi.fn()
     const anchor = { href: '', download: '', click: clickMock }
-    // @ts-expect-error mock document for node environment
-    globalThis.document = {
+    vi.stubGlobal('document', {
       createElement: vi.fn().mockReturnValue(anchor),
       body: {
         appendChild: appendChildMock,
         removeChild: removeChildMock
       }
-    }
+    })
 
     const ok = exportMarkdownFile(content, 'test-export.md')
     expect(ok).toBe(true)

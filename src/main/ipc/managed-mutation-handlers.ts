@@ -18,7 +18,7 @@ import {
  * A native confirmation dialog supplies the required operator gesture for
  * irreversible or paid actions; renderer-provided flags are NOT consent.
  */
-function trustedDesktopWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
+export function trustedDesktopWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win || win.isDestroyed() || event.senderFrame !== win.webContents.mainFrame) {
     return null

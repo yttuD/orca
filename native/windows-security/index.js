@@ -27,6 +27,17 @@ module.exports = {
   spawnDetachedIsolated: (file, commandLine, cwd, environmentBlock, onExit) =>
     getAddon().spawnDetachedIsolated(file, commandLine, cwd, environmentBlock, onExit),
   isolatedSpawnBreaksAwayFromJob: () => getAddon().isolatedSpawnBreaksAwayFromJob(),
+  spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
+    getAddon().spawnManagedJobContained(file, commandLine, cwd, environmentBlock),
+  closeRecordedManagedJobIfEmptyForQa: (job, pid, ticks) =>
+    getAddon().closeRecordedManagedJobIfEmptyForQa(job, pid, ticks),
+  acquireManagedMotorLease: (motorIdentitySha256) =>
+    getAddon().acquireManagedMotorLease(motorIdentitySha256),
+  verifyManagedMotorLeaseOwnerForQa: (lease, identity) =>
+    getAddon().verifyManagedMotorLeaseOwnerForQa(lease, identity),
+  inspectManagedQaTcpListeners: (port) => getAddon().inspectManagedQaTcpListeners(port),
+  inspectManagedQaRecordedProcess: (pid, ticks) =>
+    getAddon().inspectManagedQaRecordedProcess(pid, ticks),
   // Reads the binding this package resolved, so a build probe tests the binary the app loads.
   hasNativeExport: (name) => typeof getAddon()[name] === 'function'
 }

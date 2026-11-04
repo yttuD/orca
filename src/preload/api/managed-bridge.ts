@@ -3,6 +3,10 @@ import { ipcRenderer } from 'electron'
 export const managedApi = {
   listProjects: () => ipcRenderer.invoke('managed:listProjects'),
   status: () => ipcRenderer.invoke('managed:status'),
+  qaEngineLifecycle: () => ipcRenderer.invoke('managed:qaEngineLifecycle'),
+  qaStopEngine: () => ipcRenderer.invoke('managed:qaStopEngine'),
+  qaCrashEngine: () => ipcRenderer.invoke('managed:qaCrashEngine'),
+  edgeHealth: () => ipcRenderer.invoke('managed:edgeHealth'),
   listTasks: (projectId?: string) => ipcRenderer.invoke('managed:listTasks', projectId),
   getExecution: (projectId: string, taskId: string) =>
     ipcRenderer.invoke('managed:getExecution', projectId, taskId),

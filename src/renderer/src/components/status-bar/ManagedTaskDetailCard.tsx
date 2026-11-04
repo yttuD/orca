@@ -31,13 +31,13 @@ export function ManagedTaskDetailCard({
       const [revRes, evRes, actRes] = await Promise.all([
         window.api?.managed?.presentReviewPacket
           ? window.api.managed.presentReviewPacket(projectId, taskId)
-          : Promise.resolve({ ok: false, status: 'OFFLINE' }),
+          : Promise.resolve(null),
         window.api?.managed?.getEvidence
           ? window.api.managed.getEvidence(projectId, taskId)
-          : Promise.resolve({ ok: false, status: 'OFFLINE' }),
+          : Promise.resolve(null),
         window.api?.managed?.listActivity
           ? window.api.managed.listActivity(projectId, taskId, 15)
-          : Promise.resolve({ ok: false, status: 'OFFLINE' })
+          : Promise.resolve(null)
       ])
 
       if (revRes?.status === 'OFFLINE' || evRes?.status === 'OFFLINE') {

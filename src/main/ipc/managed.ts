@@ -1,10 +1,12 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
+import { gate9QaEnabled, qaEngineSupervisor } from './managed-qa-engine-supervisor'
 import { callEngineRpc, resolveProfileAndToken, resolveBridgeToken } from './managed-resolver'
 import type {
   ManagedProjectDTO,
   ManagedTaskDTO,
   ManagedExecutionDTO,
   ManagedEvidenceDTO,
+  ManagedCheckDTO,
   ManagedReviewPacketDTO,
   ManagedProjectsResult,
   ManagedTasksResult,
@@ -12,6 +14,23 @@ import type {
   ManagedEvidenceResult,
   ManagedReviewPacketResult
 } from './managed-types'
+
+function parseManagedChecks(value: unknown): ManagedCheckDTO[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw: unknown) => {
+    if (!raw || typeof raw !== 'object' ||
+        !('name' in raw) || !('status' in raw) ||
+        typeof raw.name !== 'string' || typeof raw.status !== 'string') return []
+    const exitCode = 'exit_code' in raw ? raw.exit_code : undefined
+    return [{
+      name: raw.name,
+      status: raw.status,
+      ...(typeof exitCode === 'number' && Number.isFinite(exitCode)
+        ? { exit_code: exitCode }
+        : exitCode === null ? { exit_code: null } : {})
+    }]
+  })
+}
 
 export * from './managed-types'
 export { resolveProfileAndToken, resolveBridgeToken }
@@ -142,9 +161,14 @@ export async function fetchManagedEvidenceFromEngine(
     attempt_id: typeof rawEv.attempt_id === 'string' ? rawEv.attempt_id : null,
     evidence_status:
       (rawEv.evidence_status as ManagedEvidenceDTO['evidence_status']) || 'NOT_FOUND',
+    provenance: String(rawEv.provenance || 'UNVERIFIED'),
+    hash_status: String(rawEv.hash_status || 'NOT_RUN'),
+    checks_summary: rawEv.checks_summary && typeof rawEv.checks_summary === 'object'
+      ? (rawEv.checks_summary as ManagedEvidenceDTO['checks_summary'])
+      : undefined,
     execution_mode: String(rawEv.execution_mode || 'REAL'),
     is_synthetic: Boolean(rawEv.is_synthetic),
-    checks: Array.isArray(rawEv.checks) ? (rawEv.checks as readonly Record<string, unknown>[]) : [],
+    checks: parseManagedChecks(rawEv.checks),
     artifacts: Array.isArray(rawEv.artifacts) ? rawEv.artifacts.map(String) : [],
     canonical_sha256: typeof rawEv.canonical_sha256 === 'string' ? rawEv.canonical_sha256 : null,
     result_sha: typeof rawEv.result_sha === 'string' ? rawEv.result_sha : null,
@@ -209,16 +233,15 @@ export async function fetchManagedReviewPacketFromEngine(
     checks_summary: rawPkt.checks_summary && typeof rawPkt.checks_summary === 'object'
       ? (rawPkt.checks_summary as ManagedReviewPacketDTO['checks_summary'])
       : { passed: 0, failed: 0, total: 0 },
-    checks: Array.isArray(rawPkt.checks)
-      ? (rawPkt.checks as ManagedReviewPacketDTO['checks'])
-      : [],
+    checks: parseManagedChecks(rawPkt.checks),
     markdown_packet: typeof rawPkt.markdown_packet === 'string' ? rawPkt.markdown_packet : null
   }
   return { ok: true, status: 'ONLINE', review_packet }
 }
 
 import { fetchManagedActivityFromEngine } from './managed-activity'
-import { registerManagedMutationHandlers } from './managed-mutation-handlers'
+import { registerManagedMutationHandlers, trustedDesktopWindow } from './managed-mutation-handlers'
+import { probeEdgeBridgeHealth } from './managed-edge-health'
 export { fetchManagedActivityFromEngine }
 export * from './managed-mutations'
 
@@ -226,6 +249,10 @@ export function registerManagedHandlers(): () => void {
   const handlers = [
     'managed:listProjects',
     'managed:status',
+    'managed:qaEngineLifecycle',
+    'managed:qaStopEngine',
+    'managed:qaCrashEngine',
+    'managed:edgeHealth',
     'managed:listTasks',
     'managed:getExecution',
     'managed:getEvidence',
@@ -240,8 +267,34 @@ export function registerManagedHandlers(): () => void {
   ipcMain.handle('managed:status', async () => {
     const res = await fetchManagedProjectsFromEngine()
     const cfg = resolveProfileAndToken()
-    return { status: res.status, ok: res.ok, profile: cfg.profile }
+    return {
+      status: res.status, ok: res.ok, profile: cfg.profile,
+      qa_lifecycle: qaEngineSupervisor.snapshot()
+    }
   })
+  ipcMain.handle('managed:qaEngineLifecycle', (event) =>
+    trustedDesktopWindow(event)
+      ? qaEngineSupervisor.snapshot()
+      : { phase: 'DISABLED', owner: 'NONE', port: null, restarts: 0,
+          error_code: 'DESKTOP_OPERATOR_REQUIRED' }
+  )
+  ipcMain.handle('managed:qaStopEngine', (event) => {
+    if (!trustedDesktopWindow(event) || !gate9QaEnabled()) {
+      return { ok: false, error_code: 'GATE9_QA_ONLY' }
+    }
+    return { ok: true, lifecycle: qaEngineSupervisor.stop() }
+  })
+  ipcMain.handle('managed:qaCrashEngine', (event) => {
+    if (!trustedDesktopWindow(event) || !gate9QaEnabled()) {
+      return { ok: false, error_code: 'GATE9_QA_ONLY' }
+    }
+    return { ok: true, lifecycle: qaEngineSupervisor.simulateCrashForQa() }
+  })
+  ipcMain.handle('managed:edgeHealth', (event) =>
+    trustedDesktopWindow(event)
+      ? probeEdgeBridgeHealth()
+      : { status: 'ERROR', port: 8768, error_code: 'DESKTOP_OPERATOR_REQUIRED' }
+  )
   ipcMain.handle('managed:listTasks', (_e, p?: string) => fetchManagedTasksFromEngine(p))
   ipcMain.handle('managed:getExecution', (_e, p: string, t: string) =>
     fetchManagedExecutionFromEngine(p, t)
@@ -257,8 +310,16 @@ export function registerManagedHandlers(): () => void {
   )
 
   const unregMutations = registerManagedMutationHandlers()
+  const quitQaEngine = () => { qaEngineSupervisor.stop() }
+  app.on('will-quit', quitQaEngine)
+  // Opt-in ONLY in disposable hidden Electron E2E.
+  if (gate9QaEnabled()) {
+    void qaEngineSupervisor.start().catch(() => {})
+  }
 
   return () => {
+    app.off('will-quit', quitQaEngine)
+    qaEngineSupervisor.stop()
     for (const h of handlers) {
       ipcMain.removeHandler(h)
     }
