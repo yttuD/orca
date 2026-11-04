@@ -21,7 +21,7 @@ describe('read-only Edge feed health (no execution privileges)', () => {
   })
 
   it('probes only hardcoded loopback; response omits bearer and generation', async () => {
-    const get = vi.fn(async () => validReply())
+    const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
     const res = await probeEdgeBridgeHealth({
       platform: 'win32', getToken: () => TOKEN, get: get as unknown as typeof fetch
     })
@@ -36,7 +36,7 @@ describe('read-only Edge feed health (no execution privileges)', () => {
       { response: new Response('{}', { status: 401 }), expected: 'ERROR' },
       { response: new Response('{}', { status: 404 }), expected: 'LEGACY' },
       { response: new Response('{"ok":true,"latest_seq":"x"}'), expected: 'ERROR' },
-      { response: new Response('bad-json'), expected: 'OFFLINE' }
+      { response: new Response('bad-json'), expected: 'ERROR' }
     ]
     for (const item of cases) {
       const state = await probeEdgeBridgeHealth({
