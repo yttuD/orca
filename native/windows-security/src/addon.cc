@@ -555,6 +555,9 @@ Napi::Value ClearStdHandleInheritance(const Napi::CallbackInfo& info) {
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   InitializeManagedJobProcess(env);
+  InitializeManagedMotorLease(env);
+  exports.Set("acquireManagedMotorLease",
+              Napi::Function::New(env, AcquireManagedMotorLease));
   exports.Set("spawnManagedJobContained",
               Napi::Function::New(env, SpawnManagedJobContained));
   exports.Set("currentUserSid", Napi::Function::New(env, CurrentUserSid));
