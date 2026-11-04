@@ -94,12 +94,15 @@ async function stopWorker(child: ChildProcess, orderly: boolean): Promise<void> 
   })
   if (orderly) child.send?.('release')
   else child.kill() // only our own ChildProcess handle, never a discovered PID
-  await Promise.race([
-    exited,
-    new Promise<void>((_resolve, reject) => setTimeout(() => reject(
-      new Error('GATE9C2_SYNTHETIC_OWNER_EXIT_TIMEOUT')
-    ), 8000))
-  ])
+  await new Promise<void>((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      reject(new Error('GATE9C2_SYNTHETIC_OWNER_EXIT_TIMEOUT'))
+    }, 8000)
+    void exited.then(() => {
+      clearTimeout(deadline)
+      resolve()
+    })
+  })
 }
 
 onlyWindows('Gate 9B-C2 native Windows ownership between independent processes', () => {
