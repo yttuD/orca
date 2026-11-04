@@ -317,17 +317,22 @@ El operador repitió la suite C3 después de la corrección del tratamiento `UNK
 
 ## Gate 9B-C3-D — Contrato de journal de propietario y recuperación conservadora (CANDIDATO)
 
-Estado al 2026-11-04: **POLÍTICA PURA Y PRUEBAS PREPARADAS, NOT_RUN EN WINDOWS**. Gate C3-C obtuvo 34/34 PASS (suite de procesos sintéticos). C3-D no constituye un sistema de journal persistente ni permite arrancar el motor operativo.
+Estado al 2026-11-04: **POLÍTICA PURA PASS EN WINDOWS, 38/38 (2026-11-04)**. Gate C3-C obtuvo 34/34 PASS (suite de procesos sintéticos). C3-D no constituye un sistema de journal persistente ni permite arrancar el motor operativo.
 
 Hallazgo técnico: el Job Object privado de `native/windows-security/src/managed-job-process.cc` es **anónimo/no heredable** y se cierra con el propietario. Una nueva instancia no puede volver a abrirlo por nombre para consultar su árbol anterior. Aun si el PID principal ya no existe, no hay evidencia suficiente de que todo el árbol finalizó. Se debe conservar evidencia confiable del dueño anterior, verificar proceso/puerto tras tomar el lease, y bloquear estados desconocidos.
 
 Artefactos:
 
 - `src/main/ipc/managed-engine-previous-owner-recovery.ts`: evaluador **sin IO** de un contrato de evidencia futura. Exige `STAGING_LOCAL`, fuente nativa-main confiable, lease propio retenido, identidad coincidente, journal íntegro/atestado, identidad PID+FILETIME del propietario verificada, y **solo** dos posibles estados lógicos: raíz nueva QA creada atómicamente con evidencia, o cierre limpio de la generación anterior. Después requiere censo de listener y procesos tras el lease, ejecutable y raíz privada verificados, y aislamiento WCB.
-- `src/main/ipc/managed-engine-previous-owner-recovery.test.ts`: escenarios sintéticos de aceptación limitada y rechazos de journal ausente, ilegible, corrupto, estado `STARTING`/`RUNNING`/`CRASHED`/`UNKNOWN`, antigua Job Object con descendientes o contador incierto, PIDs reutilizados, listener/árbol aún existentes, y WCB no comprobado. **NOT_RUN.**
+- `src/main/ipc/managed-engine-previous-owner-recovery.test.ts`: escenarios sintéticos de aceptación limitada y rechazos de journal ausente, ilegible, corrupto, estado `STARTING`/`RUNNING`/`CRASHED`/`UNKNOWN`, antigua Job Object con descendientes o contador incierto, PIDs reutilizados, listener/árbol aún existentes, y WCB no comprobado. **38/38 PASS en Windows.**
 - En `CLEAN_STOP` exige demostración independiente y confiable de que el cierre corresponde al Job Object que esta misma generación poseía y que se cerró con cero descendientes activos. El `snapshot()` posterior a `close()` devuelve cero por contrato, por lo que **no puede usarse solo como evidencia histórica**: debe documentarse un protocolo de terminación y verificación previo al cierre.
 - Un journal escrito en JSON sin protección de integridad **no puede** marcarse `ATTESTED` por su propia declaración. Ninguna booleana procedente de renderer, entorno o archivo editable se considera autoridad; el contrato es puro y una suite de tests no autentica datos de producción.
 - **Caída inesperada:** siempre devuelve `BLOCKED: INTERRUPTED_OWNER_REQUIRES_MANUAL_RECONCILIATION` hasta que exista un procedimiento externo independiente y fiable de recuperación. No añadir heurísticas de borrado de lock, kill por PID ni adopción de servicios.
 - El máximo estado `READY_FOR_ADDITIONAL_ISOLATED_QA` solo clasifica un paquete de evidencia sintético para continuar pruebas, no otorga permisos de arranque de FastAPI o despliegue.
 
 Pendientes posteriores: diseñar journal de generación persistente con raíz separada, integridad/propietario comprobables, escritura atómica/recuperación a prueba de interrupciones; sensor de descendientes y proceso previo; reconciliación tras crash sin asumir que el Job Object privado todavía existe; prueba E2E bajo lease retenido y aprobaciones nativas independientes. WCB intocable; PRs DRAFT, sin GitHub Actions.
+
+
+### Evidencia Gate 9B-C3-D, contrato — PASS Windows (2026-11-04)
+
+El operador compartió la salida original de Vitest: **1 archivo PASS, 38 pruebas PASS**, duración **593 ms**, marcador `GATE 9B-C3D OWNER RECOVERY POLICY: PASS`. Se certifica **solo la política determinista con evidencia sintética**, no un journal persistente firmado ni una recuperación de procesos Windows reales. La protección ante journal corrupto, ausencia de registro, dueño anterior interrumpido y estado de Job Object no verificable sigue bloqueando un nuevo arranque. Siguiente tramo: diseño y calificación del journal persistente aislado QA; no conectar a motor operativo ni WCB.
