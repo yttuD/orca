@@ -7,7 +7,7 @@ import { join } from 'node:path'
  */
 export type EdgeBridgeHealth = {
   readonly status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED' | 'LEGACY' | 'ERROR'
-  readonly port: 8768
+  readonly port: 8768 | 8769
   readonly latest_seq?: number
   readonly error_code?: string
 }
@@ -29,11 +29,14 @@ function readLocalFeedToken(): string | null {
 export async function probeEdgeBridgeHealth(
   deps: {
     platform?: string
+    qaMode?: boolean
     getToken?: () => string | null
     get?: typeof fetch
   } = {}
 ): Promise<EdgeBridgeHealth> {
-  const port = 8768 as const
+  // Only a test-profile opt-in may use the isolated v0.2 feed.
+  const qaMode = deps.qaMode ?? process.env.ORCA_EDGE_QA_MODE === '1'
+  const port: 8768 | 8769 = qaMode ? 8769 : 8768
   if ((deps.platform ?? process.platform) !== 'win32') {
     return { status: 'NOT_CONFIGURED', port, error_code: 'WINDOWS_ONLY' }
   }
@@ -45,7 +48,7 @@ export async function probeEdgeBridgeHealth(
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 2000)
   try {
-    const res = await (deps.get ?? fetch)('http://127.0.0.1:8768/v2/health', {
+    const res = await (deps.get ?? fetch)(`http://127.0.0.1:${port}/v2/health`, {
       method: 'GET',
       cache: 'no-store',
       credentials: 'omit',
