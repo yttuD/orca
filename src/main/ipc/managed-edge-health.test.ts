@@ -31,6 +31,23 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     expect(JSON.stringify(res)).not.toContain(TOKEN)
   })
 
+  it('uses opt-in QA 8769 only; default remains production 8768', async () => {
+    const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
+    const qa = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: true, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(qa).toEqual({ status: 'ONLINE', port: 8769, latest_seq: 55 })
+    expect(get.mock.calls[0][0]).toBe('http://127.0.0.1:8769/v2/health')
+    const stable = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: false, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(stable.port).toBe(8768)
+    expect(get.mock.calls[1][0]).toBe('http://127.0.0.1:8768/v2/health')
+    expect(JSON.stringify(qa)).not.toContain(TOKEN)
+  })
+
   it('does not treat no-auth, v1, offline, or malformed feeds as healthy', async () => {
     const cases: Array<{ response: Response; expected: string }> = [
       { response: new Response('{}', { status: 401 }), expected: 'ERROR' },
