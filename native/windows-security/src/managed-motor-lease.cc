@@ -124,7 +124,52 @@ class ManagedMotorLease final : public Napi::ObjectWrap<ManagedMotorLease> {
     lease->mutex_ = handle;
     lease->digest_ = std::move(digest);
     lease->creation_ = creation;
+    lease->ownerThreadId_ = GetCurrentThreadId();
     return instance;
+  }
+
+  /**
+   * A QA-only native ownership observation, not an operational start grant.
+   * Unlike the JS snapshot, this requires an actual ObjectWrap instance with
+   * a live native HANDLE, on the same Windows mutex-owning thread.
+   * A process with the same user identity can still create its own mutex
+   * and modify a QA journal; this cannot authenticate historic authorship.
+   */
+  static Napi::Value VerifyOwnerForQa(const Napi::CallbackInfo& info) {
+    const auto env = info.Env();
+    auto denied = [&]() -> Napi::Value {
+      auto result = Napi::Object::New(env);
+      result.Set("verified", Napi::Boolean::New(env, false));
+      return result;
+    };
+    if (info.Length() != 2 || !info[0].IsObject() || !info[1].IsString()) {
+      return denied();
+    }
+    const std::string expectedDigest = info[1].As<Napi::String>().Utf8Value();
+    if (!ValidDigest(expectedDigest)) return denied();
+
+    bool instance = false;
+    if (napi_instanceof(env, info[0], Constructor().Value(), &instance) != napi_ok ||
+        !instance) {
+      return denied();
+    }
+    void* raw = nullptr;
+    if (napi_unwrap(env, info[0], &raw) != napi_ok || raw == nullptr) {
+      return denied();
+    }
+    auto* lease = static_cast<ManagedMotorLease*>(raw);
+    if (lease->mutex_ == nullptr || lease->ownerThreadId_ != GetCurrentThreadId() ||
+        lease->digest_ != expectedDigest || lease->creation_ == 0) {
+      return denied();
+    }
+
+    auto result = Napi::Object::New(env);
+    result.Set("verified", Napi::Boolean::New(env, true));
+    result.Set("ownerPid", Napi::Number::New(env,
+        static_cast<double>(GetCurrentProcessId())));
+    result.Set("ownerCreationTimeTicks",
+        Napi::String::New(env, std::to_string(lease->creation_)));
+    return result;
   }
 
  private:
@@ -171,12 +216,17 @@ class ManagedMotorLease final : public Napi::ObjectWrap<ManagedMotorLease> {
   HANDLE mutex_ = nullptr;
   std::string digest_;
   uint64_t creation_ = 0;
+  DWORD ownerThreadId_ = 0;
 };
 
 }  // namespace
 
 void InitializeManagedMotorLease(Napi::Env env) {
   ManagedMotorLease::Initialize(env);
+}
+
+Napi::Value VerifyManagedMotorLeaseOwnerForQa(const Napi::CallbackInfo& info) {
+  return ManagedMotorLease::VerifyOwnerForQa(info);
 }
 
 Napi::Value AcquireManagedMotorLease(const Napi::CallbackInfo& info) {
