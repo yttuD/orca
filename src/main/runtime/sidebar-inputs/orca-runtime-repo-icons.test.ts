@@ -1,7 +1,7 @@
 // Runs on plain Node, as orcad does: no encoder, so small images pass through.
 import { describe, expect, it, vi } from 'vitest'
 import { OrcaRuntimeService } from '../orca-runtime'
-import { ALL_RPC_METHODS } from '../rpc/methods'
+import { SIDEBAR_REPO_ICONS_METHOD } from '../rpc/methods/sidebar-inputs'
 import type { RuntimeStore } from '../runtime-store-contract'
 
 import { repoIconId } from './repo-icon-data-urls'
@@ -17,8 +17,8 @@ const upload = {
 }
 
 function repoIconsMethod() {
-  const method = ALL_RPC_METHODS.find((entry) => entry.name === 'sidebarInputs.repoIcons')
-  if (!method?.params) {
+  const method = SIDEBAR_REPO_ICONS_METHOD
+  if (!method.params) {
     throw new Error('sidebarInputs.repoIcons is not registered with params')
   }
   return { method, params: method.params }
