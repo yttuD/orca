@@ -218,7 +218,8 @@ export async function fetchManagedReviewPacketFromEngine(
 }
 
 import { fetchManagedActivityFromEngine } from './managed-activity'
-import { registerManagedMutationHandlers } from './managed-mutation-handlers'
+import { registerManagedMutationHandlers, trustedDesktopWindow } from './managed-mutation-handlers'
+import { probeEdgeBridgeHealth } from './managed-edge-health'
 export { fetchManagedActivityFromEngine }
 export * from './managed-mutations'
 
@@ -226,6 +227,7 @@ export function registerManagedHandlers(): () => void {
   const handlers = [
     'managed:listProjects',
     'managed:status',
+    'managed:edgeHealth',
     'managed:listTasks',
     'managed:getExecution',
     'managed:getEvidence',
@@ -242,6 +244,11 @@ export function registerManagedHandlers(): () => void {
     const cfg = resolveProfileAndToken()
     return { status: res.status, ok: res.ok, profile: cfg.profile }
   })
+  ipcMain.handle('managed:edgeHealth', (event) =>
+    trustedDesktopWindow(event)
+      ? probeEdgeBridgeHealth()
+      : { status: 'ERROR', port: 8768, error_code: 'DESKTOP_OPERATOR_REQUIRED' }
+  )
   ipcMain.handle('managed:listTasks', (_e, p?: string) => fetchManagedTasksFromEngine(p))
   ipcMain.handle('managed:getExecution', (_e, p: string, t: string) =>
     fetchManagedExecutionFromEngine(p, t)
