@@ -149,7 +149,7 @@ test('hidden Electron reads real FastAPI projects over authenticated loopback an
   })
   expect(JSON.stringify(result)).not.toContain(gate7Backend.token)
   const projectId = result.projects[0]?.id
-  expect(projectId).toBeTruthy()
+  if (!projectId) throw new Error('GATE7_SYNTHETIC_PROJECT_ID_MISSING')
 
   const taskResult = await orcaPage.evaluate((id) => window.api.managed.listTasks(id), projectId)
   expect(taskResult).toMatchObject({ ok: true, status: 'ONLINE', tasks: [] })
