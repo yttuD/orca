@@ -352,4 +352,18 @@ Se aprovechan mecanismos ya existentes en Orca: `src/shared/secure-file.ts` (`wr
 
 ### Estado / próximos controles
 
-**Código publicado; TypeScript y 12 tests NOT_RUN** hasta verificación del operador. Si aprueba, siguiente etapa C3-E-B debe tener un escritor *nativo real* ligado a generación+lease mantenido, con aislamiento de perfil, prueba de posesión del Job Object previo y semántica ante cortes eléctricos; ningún checksum o ACL por sí solo otorga confianza de arranque. Además deben resolverse concurrencia de escritores, rollback, proceso huérfano y reconciliación post-crash. Ambos PR DRAFT, sin GitHub Actions ni merge.
+**E-A PASS en Windows: 1 archivo, 12/12 tests, 1,79 s (2026-11-04).** Si aprueba, siguiente etapa C3-E-B debe tener un escritor *nativo real* ligado a generación+lease mantenido, con aislamiento de perfil, prueba de posesión del Job Object previo y semántica ante cortes eléctricos; ningún checksum o ACL por sí solo otorga confianza de arranque. Además deben resolverse concurrencia de escritores, rollback, proceso huérfano y reconciliación post-crash. Ambos PR DRAFT, sin GitHub Actions ni merge.
+
+### Evidencia Windows Gate 9B-C3-E-A (2026-11-04)
+
+El operador compartió la salida original de Vitest: **1 archivo PASS, 12/12 pruebas PASS**, duración 1,79 s, marcador `GATE 9B-C3E QA JOURNAL: PASS`. Certifica persistencia sintética de QA y rechazo de corrupciones; no demuestra atestación nativa, protección ante rollback, concurrencia de escritores ni integridad ante atacante con la misma cuenta.
+
+## Gate 9B-C3-E-B — Escritor de journal con lease nativo retenido (CANDIDATO, NOT_RUN)
+
+- `native/windows-security/src/managed-motor-lease.cc` incorpora `VerifyManagedMotorLeaseOwnerForQa`: verifica un objeto nativo `ManagedMotorLease` real (no un snapshot JS), estado HANDLE retenido, hilo propietario Windows y el SHA-256 del motor. Devuelve identidad PID y FILETIME del proceso dueño. No adquiere un nuevo lease ni otorga permisos de arranque.
+- La exportación `verifyManagedMotorLeaseOwnerForQa` está registrada en `addon.cc`, declarada en `index.d.ts`, expuesta en `index.js`/`src/shared/windows-security-addon.ts`; los mocks rechazan uso inesperado. Requiere **recompilar el addon nativo**.
+- `src/main/ipc/managed-previous-owner-lease-journal-qa.ts` publica el registro solo si el verificador nativo confirma el mismo SHA-256 y PID+FILETIME del dueño; hace otra verificación al terminar. Toda la operación de escritura de archivo es sin `await`, en la misma llamada síncrona del hilo dueño. Si falla, bloquea; nunca marca el registro como autenticado.
+- `src/main/ipc/managed-previous-owner-lease-journal-qa.test.ts`: **6 tests nuevos NOT_RUN**, solo en el clon QA, usando mutex real de identidad sintética y archivos TEMP aislados. Prueban escritura protegida, falso handle JS, handle cerrado, competidor/motor distinto, PID/FILETIME falso y negativa a sobrescribir journal `PREPARING` con otra generación.
+- **Límite explícito:** las APIs de E-A y E-B son de laboratorio; el escritor E-A sin lease sigue disponible, la prueba de un handle actual no identifica al autor histórico y un atacante bajo el mismo usuario todavía puede manipular archivos y recrear hashes. No declarar `journalIntegrity='ATTESTED'`. No existe todavía un journal protegido contra rollback ni una prueba completa del Job Object anterior. No conectar este módulo a IPC, renderer o procesos operativos.
+
+Estado E-B: código en rama DRAFT, **TYPECHECK NOT_RUN / MSVC NOT_RUN / TESTS NOT_RUN**. En Windows QA ejecutar `tc:node`, `node-gyp rebuild --directory native/windows-security`, y Vitest de `managed-previous-owner-journal-qa.test.ts` más `managed-previous-owner-lease-journal-qa.test.ts`. Si todo aprueba, se esperan **18/18 tests en 2 archivos** (12 E-A + 6 E-B). WCB, servicio FastAPI y puertos operativos intocables; ningún GitHub Action o merge.
