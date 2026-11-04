@@ -251,6 +251,7 @@ export function registerManagedHandlers(): () => void {
     'managed:status',
     'managed:qaEngineLifecycle',
     'managed:qaStopEngine',
+    'managed:qaCrashEngine',
     'managed:edgeHealth',
     'managed:listTasks',
     'managed:getExecution',
@@ -282,6 +283,12 @@ export function registerManagedHandlers(): () => void {
       return { ok: false, error_code: 'GATE9_QA_ONLY' }
     }
     return { ok: true, lifecycle: qaEngineSupervisor.stop() }
+  })
+  ipcMain.handle('managed:qaCrashEngine', (event) => {
+    if (!trustedDesktopWindow(event) || !gate9QaEnabled()) {
+      return { ok: false, error_code: 'GATE9_QA_ONLY' }
+    }
+    return { ok: true, lifecycle: qaEngineSupervisor.simulateCrashForQa() }
   })
   ipcMain.handle('managed:edgeHealth', (event) =>
     trustedDesktopWindow(event)
