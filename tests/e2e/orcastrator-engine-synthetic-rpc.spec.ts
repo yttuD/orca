@@ -2,11 +2,18 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test as base } from './helpers/orca-app'
 
+type RejectedRequest = {
+  method: string
+  path: string
+  status: number
+  reason: 'UNEXPECTED_ROUTE' | 'AUTH_MISMATCH' | 'INVALID_JSON' | 'RPC_DENIED'
+}
+
 type SyntheticEngine = {
   port: number
   token: string
   authenticatedMethods: string[]
-  getRejectedRequests: () => number
+  getRejectedRequests: () => readonly RejectedRequest[]
 }
 
 // Real loopback HTTP, disposable Electron profile, fake engine/token.
@@ -16,22 +23,29 @@ const test = base.extend<{ syntheticEngine: SyntheticEngine }>({
   syntheticEngine: async ({}, use) => {
     const token = 'orca-e2e-engine-' + 'x'.repeat(48)
     const authenticatedMethods: string[] = []
-    let rejectedRequests = 0
+    const rejectedRequests: RejectedRequest[] = []
     const server = createServer((request, response) => {
-      const fail = (code: number) => {
-        rejectedRequests += 1
+      // Record only method, pathname and classification, never credentials,
+      // headers, request bodies, or query strings.
+      const fail = (code: number, reason: RejectedRequest['reason']) => {
+        rejectedRequests.push({
+          method: request.method || 'UNKNOWN',
+          path: (request.url || '').split('?')[0],
+          status: code,
+          reason
+        })
         response.writeHead(code, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ ok: false, error_code: 'SYNTHETIC_DENIED' }))
       }
       if (request.method !== 'POST' || request.url !== '/api/managed/rpc') {
-        fail(404)
+        fail(404, 'UNEXPECTED_ROUTE')
         return
       }
       if (
         request.headers.authorization !== 'Bearer ' + token ||
         request.headers['x-managed-profile'] !== 'STAGING_LOCAL'
       ) {
-        fail(401)
+        fail(401, 'AUTH_MISMATCH')
         return
       }
       const chunks: Buffer[] = []
@@ -50,7 +64,7 @@ const test = base.extend<{ syntheticEngine: SyntheticEngine }>({
         try {
           rpc = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
         } catch {
-          fail(400)
+          fail(400, 'INVALID_JSON')
           return
         }
         const method = rpc.method
@@ -64,7 +78,7 @@ const test = base.extend<{ syntheticEngine: SyntheticEngine }>({
           (rpc.protocol as Record<string, unknown>).major !== 1 ||
           (method !== 'managed.listProjects' && method !== 'managed.listTasks')
         ) {
-          fail(403)
+          fail(403, 'RPC_DENIED')
           return
         }
         authenticatedMethods.push(method)
@@ -90,7 +104,7 @@ const test = base.extend<{ syntheticEngine: SyntheticEngine }>({
         port: (server.address() as AddressInfo).port,
         token,
         authenticatedMethods,
-        getRejectedRequests: () => rejectedRequests
+        getRejectedRequests: () => [...rejectedRequests]
       })
     } finally {
       await new Promise<void>((resolve, reject) =>
@@ -139,7 +153,7 @@ test('hidden Electron reads authenticated synthetic Managed projects through IPC
   await expect(
     orcaPage.getByText('Orcastrator QA Synthetic', { exact: true })
   ).toBeVisible({ timeout: 25000 })
-  expect(syntheticEngine.getRejectedRequests()).toBe(0)
+  expect(syntheticEngine.getRejectedRequests()).toEqual([])
   expect(syntheticEngine.authenticatedMethods.every(
     (method) => method === 'managed.listProjects' || method === 'managed.listTasks'
   )).toBe(true)
