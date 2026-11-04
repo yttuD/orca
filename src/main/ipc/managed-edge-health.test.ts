@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+afterEach(() => vi.unstubAllEnvs())
 import { probeEdgeBridgeHealth } from './managed-edge-health'
 
 const TOKEN = 'x'.repeat(48)
@@ -46,6 +51,30 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     expect(stable.port).toBe(8768)
     expect(get.mock.calls[1][0]).toBe('http://127.0.0.1:8768/v2/health')
     expect(JSON.stringify(qa)).not.toContain(TOKEN)
+  })
+
+  it('does not read an ambient production token while running headless E2E', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-edge-token-test-'))
+    try {
+      const ambientRoot = join(root, 'ambient')
+      const tokenDir = join(ambientRoot, 'Orcastrator', 'bridge', 'edge-chat-bridge')
+      mkdirSync(tokenDir, { recursive: true })
+      writeFileSync(join(tokenDir, 'token.txt'), TOKEN, 'utf8')
+      vi.stubEnv('LOCALAPPDATA', ambientRoot)
+      vi.stubEnv('ORCA_E2E_HEADLESS', '1')
+      vi.stubEnv('ORCA_E2E_HOME_DIR', join(root, 'isolated-home'))
+
+      const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
+      const result = await probeEdgeBridgeHealth({
+        platform: 'win32', qaMode: true, get: get as unknown as typeof fetch
+      })
+      expect(result).toEqual({
+        status: 'NOT_CONFIGURED', port: 8769, error_code: 'LOCAL_FEED_TOKEN_MISSING'
+      })
+      expect(get).not.toHaveBeenCalled()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('does not treat no-auth, v1, offline, or malformed feeds as healthy', async () => {
