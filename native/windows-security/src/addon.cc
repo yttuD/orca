@@ -11,6 +11,7 @@
 #include "managed-job-process.h"
 #include "managed-motor-lease.h"
 #include "managed-listener-census.h"
+#include "managed-recorded-process.h"
 
 #include <functional>
 #include <cstring>
@@ -557,6 +558,8 @@ Napi::Value ClearStdHandleInheritance(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   InitializeManagedJobProcess(env);
   InitializeManagedMotorLease(env);
+  exports.Set("inspectManagedQaRecordedProcess",
+              Napi::Function::New(env, InspectManagedQaRecordedProcess));
   exports.Set("inspectManagedQaTcpListeners",
               Napi::Function::New(env, InspectManagedQaTcpListeners));
   exports.Set("acquireManagedMotorLease",
