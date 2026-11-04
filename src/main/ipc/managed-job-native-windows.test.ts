@@ -92,7 +92,25 @@ windowsOnly('Gate 9B native private Job Object containment', () => {
       await waitUntil(() => !processExists(snapshot.pid) && !processExists(grandchildPid!))
     } finally {
       job?.close()
-      rmSync(root, { recursive: true, force: true, maxRetries: 4, retryDelay: 200 })
+      // Windows may still hold the temporary .cjs directory briefly after
+      // the Job Object has killed both processes. Closing the job is not a
+      // synchronous wait for filesystem handles to be released.
+      // Retry ONLY transient filesystem locks, with a strict timeout.
+      await waitUntil(() => {
+        try {
+          rmSync(root, { recursive: true, force: true })
+          return true
+        } catch (error) {
+          const code =
+            error !== null && typeof error === 'object' && 'code' in error
+              ? error.code
+              : undefined
+          if (code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') {
+            return false
+          }
+          throw error
+        }
+      }, 8000)
     }
   }, 25000)
 
