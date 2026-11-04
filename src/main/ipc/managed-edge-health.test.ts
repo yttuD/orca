@@ -77,6 +77,39 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     }
   })
 
+  it('allows an ephemeral loopback port only in a headless isolated QA profile', async () => {
+    const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
+    vi.stubEnv('ORCA_E2E_HEADLESS', '1')
+    vi.stubEnv('ORCA_E2E_HOME_DIR', 'C:\\isolated-e2e-home')
+    vi.stubEnv('ORCA_EDGE_E2E_PORT', '49321')
+    const e2e = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: true, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(e2e).toEqual({ status: 'ONLINE', port: 49321, latest_seq: 55 })
+    expect(get.mock.calls[0][0]).toBe('http://127.0.0.1:49321/v2/health')
+
+    // The same environment variable must NEVER redirect an ordinary Desktop session.
+    vi.stubEnv('ORCA_E2E_HEADLESS', '0')
+    const normal = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: true, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(normal.port).toBe(8769)
+    expect(get.mock.calls[1][0]).toBe('http://127.0.0.1:8769/v2/health')
+
+    vi.stubEnv('ORCA_E2E_HEADLESS', '1')
+    vi.stubEnv('ORCA_EDGE_E2E_PORT', 'not-a-port')
+    const invalid = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: true, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(invalid).toEqual({
+      status: 'NOT_CONFIGURED', port: 8769, error_code: 'INVALID_E2E_PORT'
+    })
+    expect(get).toHaveBeenCalledTimes(2)
+  })
+
   it('does not treat no-auth, v1, offline, or malformed feeds as healthy', async () => {
     const cases: Array<{ response: Response; expected: string }> = [
       { response: new Response('{}', { status: 401 }), expected: 'ERROR' },
