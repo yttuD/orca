@@ -9,6 +9,7 @@
 
 #include "isolated-spawn.h"
 #include "managed-job-process.h"
+#include "managed-motor-lease.h"
 
 #include <functional>
 #include <cstring>
