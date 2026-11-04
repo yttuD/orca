@@ -134,3 +134,10 @@ El operador entregó Vitest v5.0.5 desde el clon `D:/Programacion-Cosas/ORCASTRA
 **Criterio:** ejecutar `pnpm.cmd run tc:web`, `pnpm.cmd run tc:node` y Vitest de las 4 suites de C4-A/B1/B2A/B2B **más** las dos suites renderer nuevas. Si pasa: **6 archivos / 77 pruebas** (60 anteriores + 17 nuevas). Como no cambió C++, no se requiere `node-gyp rebuild`. Resultados hasta aquí aún NOT_RUN.
 
 **Próximo trabajo no incluido:** UX de diagnóstico real necesita una fuente nativa previamente autenticada y sanitizada, con decisión clara sobre límites, sin convertir el renderer ni un JSON de journal en autoridad. La recuperación sigue SUPERVISADA, fail-closed y sin permiso de reinicio. WCB, motor operativo, GitHub Actions y merges fuera de alcance.
+
+
+### Primer intento Windows Gate C4-C-A — typecheck web FAIL (2026-11-04)
+
+El operador ejecutó `pnpm.cmd run tc:web` en `D:/Programacion-Cosas/ORCASTRATOR-DESKTOP-QA/orca`. El compilador informó **1 error en 1 archivo, tras comprobar 16.474 archivos en 46,56 s**: `src/renderer/src/components/status-bar/ManagedSupervisedRecoveryPanel.test.tsx(1,8): TS6133 'React' is declared but its value is never read`. El script terminó con `GATE9C4CA_WEB_TYPECHECK_FAILED`, y **no llegaron a ejecutarse** `tc:node` ni las seis suites Vitest de 77 pruebas en ese intento. El resto de C4-C-A no puede declararse PASS ni FAIL por esas pruebas ausentes.
+
+**Corrección minimalista solo del test:** Orca `feat/orcastrator-edge-health`, commit `457c2baadaedab407e65738bf969761b40118117`, elimina `import React from 'react'` de `ManagedSupervisedRecoveryPanel.test.tsx`; el JSX usa la transformación automática de React. Sin cambios de C++, componente de producción, IPC, WCB ni motor real. **RETEST_REQUIRED**: actualizar clon QA limpio y volver a ejecutar `tc:web`, `tc:node` y las seis suites. Criterio: **6 archivos / 77 pruebas PASS** y marcador `GATE 9B-C4C-A ELECTRON SUPERVISED RECOVERY PANEL QA: PASS`, únicamente si así lo verifica Windows.
