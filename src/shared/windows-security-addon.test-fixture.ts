@@ -128,6 +128,9 @@ export function createFakeWindowsSecurity(): FakeWindowsSecurity {
     spawnDetachedIsolated: () => {
       throw new Error('spawnDetachedIsolated is not faked')
     },
+    spawnManagedJobContained: () => {
+      throw new Error('spawnManagedJobContained is not faked')
+    },
     isolatedSpawnBreaksAwayFromJob: () => true,
     hasNativeExport: () => true,
     getDaclAces: (addonPath) => {
