@@ -124,6 +124,8 @@ function prepare(raw: WindowsSecurityAddon): WindowsSecurity {
         raw.spawnManagedJobContained(
           file, commandLine, cwd, environmentBlock
         ),
+      acquireManagedMotorLease: (motorIdentitySha256) =>
+        raw.acquireManagedMotorLease(motorIdentitySha256),
       isolatedSpawnBreaksAwayFromJob: () => raw.isolatedSpawnBreaksAwayFromJob(),
       hasNativeExport: (name) => raw.hasNativeExport(name)
     }
