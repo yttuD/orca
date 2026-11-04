@@ -139,3 +139,39 @@ export declare function spawnManagedJobContained(
   cwd: string,
   environmentBlock: string
 ): ManagedJobContainedProcess
+
+/** Gate 9B-C2 only. Lease possession NEVER authorizes an operational motor start. */
+export type ManagedMotorLeaseSnapshot = {
+  readonly held: boolean
+  readonly scope: 'MACHINE'
+  readonly motorIdentitySha256: string
+  readonly aclVerified: boolean
+  /** Exact Win32 FILETIME ticks: string preserves 100ns precision. */
+  readonly ownerCreationTimeTicks: string
+  /** Requires independent, post-acquisition port/process/Job Object census. */
+  readonly reconciliationRequired: true
+}
+
+export type ManagedMotorLeaseHandle = {
+  snapshot(): ManagedMotorLeaseSnapshot
+  /** Releases ONLY the owner's mutex; never kills or adopts processes. */
+  close(): void
+}
+
+export type ManagedMotorLeaseAcquireResult =
+  | { readonly state: 'HELD_BY_OTHER' }
+  | {
+      readonly state: 'ACQUIRED_REQUIRES_RECONCILIATION'
+      readonly lease: ManagedMotorLeaseHandle
+    }
+
+/**
+ * Windows-only: atomically claim a globally named QA lease keyed by a
+ * trusted canonical lower-case SHA-256 identity. Existing objects block.
+ * Requires verified ACL, no inheritable handle, and no wait/adoption.
+ * NOT an operational start grant. The caller must own the resulting
+ * opaque handle until all of its own Job Object processes are stopped.
+ */
+export declare function acquireManagedMotorLease(
+  motorIdentitySha256: string
+): ManagedMotorLeaseAcquireResult
