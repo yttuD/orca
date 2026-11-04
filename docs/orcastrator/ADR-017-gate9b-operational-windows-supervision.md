@@ -431,3 +431,23 @@ Tercer ensayo tras el arreglo del fixture Node detached: el operador presentó V
 El operador reportó `RUN v5.0.5` en el clon aislado Orca: **5 archivos / 29 pruebas PASS**, duración **2,33 segundos**, marcador exacto `GATE 9B-C3E-D NATIVE CLEAN STOP JOURNAL QA: PASS`, inicio de suite 11:27:43 hora local. Se confirma la suite sintética que enlaza identidad del Job Object real con lease nativo y transición QA no autenticada del journal. El fragmento compartido corresponde a Vitest y no vuelve a transcribir el build MSVC ni el typecheck; no atribuirles por separado un nuevo PASS.
 
 **C3-E-D PASS exclusivamente en QA.** La salida `QA_CLEAN_STOP_PERSISTED_UNATTESTED` no es testimonio firmado, no evita rollback/sustitución por aplicaciones del mismo usuario, no autentica generaciones históricas ni resuelve motores huérfanos tras crash. No conectar todavía al flujo de arranque operativo.
+
+## Gate 9B-C3-E-E — Cuarentena de journals históricos no autenticados (CANDIDATO)
+
+Estado al 2026-11-04: **9 pruebas adversariales Windows preparadas; typecheck y Vitest NOT_RUN**. E-D pasó 5 archivos y 29 pruebas; E-E no modifica el addon C++.
+
+### Amenazas bajo prueba
+
+El journal QA usa una cadena SHA-256 para detectar alteraciones accidentales, pero ese checksum **no tiene secreto**. Otra aplicación del mismo usuario con acceso al archivo puede recomputar el hash, falsificar `CLEAN_STOP`, reemplazar el PID/identidad SHA-256 del motor y hacer rollback a un journal anterior todavía válido. El testimonio JS `CLOSED_EMPTY_QA_ONLY` era válido en el proceso creador, pero no acredita la autoría de bytes leídos posteriormente de disco.
+
+### Nuevos artefactos
+
+- `src/main/ipc/managed-qa-historical-recovery-quarantine.ts`: clasificador read-only del journal QA que **siempre** devuelve `state='BLOCKED'`, `journalIntegrity='UNVERIFIED'` y `startupAllowed=false`. Diferencia `HISTORICAL_JOURNAL_MISSING`, `HISTORICAL_JOURNAL_UNVERIFIABLE`, `PREVIOUS_OWNER_INTERRUPTED_OR_UNVERIFIED` y `CLEAN_STOP_HISTORY_UNATTESTED`. Un `CLEAN_STOP` con checksum válido tampoco se promueve a `ATTESTED`.
+- `src/main/ipc/managed-qa-historical-recovery-quarantine.test.ts`: 9 pruebas Windows confinadas a archivos TEMP de QA: ausencia de journal; `PREPARING`; `JOB_ASSIGNED`; `CLEAN_STOP` íntegro; truncamiento; cambio sin actualizar hash; falsificación de CLEAN_STOP **con SHA-256 recomputado**; rollback byte a byte a un registro PREPARING con hash legítimo; inyección de campo `journalIntegrity: ATTESTED`. No inician motores, puertos ni procesos. **NOT_RUN**.
+- El gate **no implementa autenticación**: sólo prueba que no se confía en un archivo histórico no autenticado. El evaluador puro C3-D usa valores `TRUSTED_NATIVE_MAIN` sintéticos; todavía no existe un productor nativo capaz de atestarlos.
+
+### Bloqueos de arquitectura
+
+Para una recuperación automática futura tras crash se requiere atestación de propietario independiente de la cuenta que puede editar el journal, un contador/secuencia monotónica resistente a rollback, exclusión entre escritores y comprobación independiente de procesos sobrevivientes. SHA-256 simple, una clave recuperable por el mismo usuario o DPAPI con el mismo alcance del usuario no resuelven por sí solos este modelo de amenazas. Mientras no exista un ancla de confianza suficiente, las recuperaciones de dueño anterior deben permanecer bloqueadas y requerir reconciliación supervisada.
+
+Próximo QA: `pnpm.cmd run tc:node` y Vitest con las cinco suites E-D anteriores más `managed-qa-historical-recovery-quarantine.test.ts`. Si todas aprueban se esperan **6 archivos / 38 pruebas PASS** (29 previas + 9 nuevas). Sin recompilación C++, sin cambios a WCB, FastAPI operativo, GitHub Actions ni merges.
