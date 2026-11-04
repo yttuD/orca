@@ -295,3 +295,15 @@ Tras la confirmación **C3-A contrato 28/28 PASS** y `tc:node` sin errores en **
 ### Evidencia de Windows C3-B — 2026-11-04
 
 El operador confirmó Vitest **2 archivos / 31 pruebas PASS**, duración 772 ms, marcador `GATE 9B-C3B TCP CENSUS QA: PASS` (inicio 09:10:37 hora local). La secuencia anterior incluía compilación nativa; el fragmento compartido en este turno corresponde al resultado final de Vitest y su sentinel, no detalla nuevamente la salida de MSVC. Se certifica el comportamiento del sensor con listeners sintéticos TCP; no se certifica ausencia de motores huérfanos sin puertos. Siguiente Gate 9B-C3-C: identidad de procesos previamente registrados usando PID y tiempo de creación Win32, sin terminar procesos ajenos.
+
+
+## Gate 9B-C3-C — Sonda Win32 de identidad de proceso registrado (CANDIDATO / NOT_RUN)
+
+Implementación QA **read-only** y sin autorización de arranque:
+
+- `native/windows-security/src/managed-recorded-process.h/.cc` implementa `inspectManagedQaRecordedProcess(pid, expectedCreationTimeTicks)`, consulta un PID **previamente conocido** mediante `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)`, lee su FILETIME mediante `GetProcessTimes`, consulta el estado de ese HANDLE y la ruta del ejecutable con `QueryFullProcessImageNameW`. No enumera procesos del host ni abre puertos, ni termina, inicia o adopta procesos.
+- Respuestas: `MATCH_RUNNING`, `MATCH_EXITED`, `PID_REUSED`, `NOT_RUNNING` o `UNKNOWN`. Una discrepancia de FILETIME rechaza atribuir el PID a la instancia anterior. Un error de permisos/identidad produce `UNKNOWN` en vez de afirmar ausencia. El dato `executablePath` solo podrá utilizarse en un módulo nativo/Electron-main confiable; nunca exponerse a renderer, logs ni telemetría.
+- La sonda se declara en `index.d.ts`, se exporta desde `addon.cc`, se compila en `binding.gyp` y se integra a `src/shared/windows-security-addon.ts`. Los mocks antiguos rechazan explícitamente su uso.
+- `src/main/ipc/managed-recorded-process-windows.test.ts` contiene tres pruebas con **procesos creados exclusivamente por la prueba**: identidad de un PID propio en escucha efímera y discrepancia de generación, identificación del mismo proceso Node sintético antes y después de su cierre, y validación negativa de PID/FILETIME. Reutiliza el fixture `tests/fixtures/orca-gate9c3-tcp-owner.cjs` con expiración de 20 segundos.
+- **No existe aún** un journal persistente autenticado que proporcione `PID+creationTimeTicks` del motor anterior ni una compuerta que corrobore todos los descendientes del Job Object. `NOT_RUNNING`, `PID_REUSED` y `MATCH_EXITED` **no acreditan** que todo el árbol del motor anterior haya terminado. C3-C es una prueba *parcial* de identidad, no una reconciliación completa ni autorización para iniciar producción.
+- Estado: candidato en rama draft; typecheck, compilación de C++ y tres pruebas nuevas **NOT_RUN EN WINDOWS**. Las 31/31 pruebas C3-B previas continúan siendo evidencia histórica independiente. No ejecutar GitHub Actions, no fusionar ramas, no tocar WCB ni los servicios existentes.
