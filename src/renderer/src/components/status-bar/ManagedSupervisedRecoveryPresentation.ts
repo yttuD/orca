@@ -56,7 +56,7 @@ function allowedLabel(
 ): string {
   if (typeof source !== 'string' ||
       !Object.prototype.hasOwnProperty.call(lookup, source)) return fallback
-  return lookup[source]
+  return lookup[source] ?? fallback
 }
 
 const DEFAULT_MISSING = [
