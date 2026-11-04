@@ -29,6 +29,8 @@ module.exports = {
   isolatedSpawnBreaksAwayFromJob: () => getAddon().isolatedSpawnBreaksAwayFromJob(),
   spawnManagedJobContained: (file, commandLine, cwd, environmentBlock) =>
     getAddon().spawnManagedJobContained(file, commandLine, cwd, environmentBlock),
+  acquireManagedMotorLease: (motorIdentitySha256) =>
+    getAddon().acquireManagedMotorLease(motorIdentitySha256),
   // Reads the binding this package resolved, so a build probe tests the binary the app loads.
   hasNativeExport: (name) => typeof getAddon()[name] === 'function'
 }
