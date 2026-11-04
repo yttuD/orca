@@ -1,3 +1,12 @@
+export type ManagedQaLifecycleDTO = {
+  readonly phase: 'DISABLED' | 'STOPPED' | 'STARTING' | 'ONLINE' | 'DEGRADED' |
+    'RECOVERING' | 'ERROR' | 'STOPPING'
+  readonly owner: 'NONE' | 'THIS_ELECTRON'
+  readonly port: number | null
+  readonly restarts: number
+  readonly error_code?: string
+}
+
 export type ManagedBridgeApi = {
   listProjects: () => Promise<{
     ok: boolean
@@ -14,7 +23,18 @@ export type ManagedBridgeApi = {
       readonly updated_at?: string | null
     }[]
   }>
-  status: () => Promise<{ status: string; ok: boolean; profile?: string }>
+  status: () => Promise<{
+    status: string
+    ok: boolean
+    profile?: string
+    qa_lifecycle?: ManagedQaLifecycleDTO
+  }>
+  qaEngineLifecycle: () => Promise<ManagedQaLifecycleDTO>
+  qaStopEngine: () => Promise<{
+    ok: boolean
+    error_code?: string
+    lifecycle?: ManagedQaLifecycleDTO
+  }>
   edgeHealth: () => Promise<{
     status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED' | 'LEGACY' | 'ERROR'
     port: number
