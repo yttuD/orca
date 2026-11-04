@@ -146,7 +146,7 @@ bool ReadIpv6Rows(const TableResult& table, unsigned port,
   return true;
 }
 
-Napi::Value Unknown(Napi::Env env, unsigned port, const char* code) {
+Napi::Value MakeUnknownCensus(Napi::Env env, unsigned port, const char* code) {
   auto result = Napi::Object::New(env);
   result.Set("status", Napi::String::New(env, "UNKNOWN"));
   result.Set("port", Napi::Number::New(env, port));
@@ -176,12 +176,12 @@ Napi::Value InspectManagedQaTcpListeners(const Napi::CallbackInfo& info) {
 
   auto ipv4 = ReadListenerTable(AF_INET);
   auto ipv6 = ReadListenerTable(AF_INET6);
-  if (!ipv4.ok || !ipv6.ok) return Unknown(env, port, "TCP_TABLE_UNAVAILABLE");
+  if (!ipv4.ok || !ipv6.ok) return MakeUnknownCensus(env, port, "TCP_TABLE_UNAVAILABLE");
 
   std::vector<Napi::Object> rows;
   if (!ReadIpv4Rows(ipv4, port, env, &rows) ||
       !ReadIpv6Rows(ipv6, port, env, &rows)) {
-    return Unknown(env, port, "TCP_TABLE_INCONSISTENT");
+    return MakeUnknownCensus(env, port, "TCP_TABLE_INCONSISTENT");
   }
   auto result = Napi::Object::New(env);
   result.Set("status", Napi::String::New(
