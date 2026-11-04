@@ -279,3 +279,19 @@ export declare function verifyManagedMotorLeaseOwnerForQa(
   lease: unknown,
   motorIdentitySha256: string
 ): ManagedQaNativeLeaseOwnerProof
+
+/**
+ * C3-E-D QA only. Uses a native type-tagged private Job Object and validates
+ * its exact root PID/FILETIME before invoking the native clean-close path.
+ * A forged JS object, fake prototype or stale identity is rejected.
+ * This is NOT an authenticated journal record or an operational start grant.
+ */
+export type ManagedQaRecordedCleanCloseResult =
+  | ManagedJobContainedCleanCloseQaResult
+  | { readonly state: 'UNTRUSTED_JOB_OBJECT' | 'JOB_IDENTITY_MISMATCH' }
+
+export declare function closeRecordedManagedJobIfEmptyForQa(
+  job: unknown,
+  expectedRootPid: number,
+  expectedRootCreationTimeTicks: string
+): ManagedQaRecordedCleanCloseResult
