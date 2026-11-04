@@ -121,8 +121,27 @@ export type ManagedJobContainedSnapshot = {
  * close() is idempotent, kills the whole contained job and does not accept
  * any PID, process name or network port.
  */
+export type ManagedJobContainedCleanCloseQaResult =
+  | {
+      readonly state:
+        | 'ROOT_STILL_RUNNING'
+        | 'DESCENDANTS_STILL_RUNNING'
+        | 'UNKNOWN'
+        | 'ALREADY_CLOSED'
+    }
+  | {
+      readonly state: 'CLOSED_EMPTY_QA_ONLY'
+      readonly pid: number
+      readonly creationTimeTicks: string
+      readonly observedActiveProcesses: 0
+      readonly rootExitedBeforeClose: true
+      readonly notHistoricalAttestation: true
+    }
+
 export type ManagedJobContainedProcess = {
   snapshot(): ManagedJobContainedSnapshot
+  /** QA-only: close only after original root exited AND kernel Job Object member count is zero. No PID-based termination. */
+  closeIfEmptyForQa(): ManagedJobContainedCleanCloseQaResult
   close(): void
 }
 
