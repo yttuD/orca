@@ -256,3 +256,17 @@ No usar GitHub Actions, no fusionar los PR, no tocar WCB, el puerto 8765 ni el m
 El operador ejecutó `pnpm run tc:node`: **19.601 archivos sin errores de tipos** (13,26 s). `node-gyp 12.3.0`, Node 22.23.4 Windows x64, Python 3.13.5 y VS2026/MSBuild compilaron `managed-motor-lease.cc` y generaron `orca_windows_security.node`; el resultado concluyó `gyp info ok`. Vitest ejecutó **3 archivos, 48/48 tests PASS**, 1,35 s, con marcador `GATE 9B-C2 NATIVE INTERPROCESS QA: PASS`. Warnings Vite ESM/CJS informativos.
 
 Clasificación: **9B-C2-N PASS para competencia entre procesos Node sintéticos de la misma sesión Windows**; incluye rechazo del competidor bajo otra etiqueta de perfil, cierre normal, liberación tras caída, exclusividad entre identidades diferentes y comprobaciones de parámetros. No existe evidencia de coordinación entre distintas sesiones/usuarios Windows, ni de exclusividad ligada a una instancia de motor real, ni de compatibilidad con ACL de un servicio operativo. Aun adquiriendo un mutex, debe ejecutarse un censo independiente del motor/puertos y verificarse identidad, proceso y Job Object antes de arrancar. **Activación operativa NO AUTORIZADA**.
+
+## Gate 9B-C3 — Reconciliación posterior al lease (contrato en QA)
+
+Estado: **política y tests preparados, NOT_RUN; sensor nativo de procesos/puertos NOT_IMPLEMENTED**. La aprobación C2-N obtenida en Windows (48/48) no prueba que no exista un proceso FastAPI anterior.
+
+El módulo puro `src/main/ipc/managed-engine-reconciliation.ts` evalúa exclusivamente evidencias *que en una versión futura deberán estar firmadas por el main/native confiable*, jamás por renderer o variables de entorno sin validación. Requiere instalación y ejecutable verificados, checkout/data-root staging privados, identidad/generación y handle lease presentes, puerto efímero staging, censo posterior al lease, ningún listener (incluido uno propio anterior), ausencia de procesos y Job Objects residuales, y preservación de WCB.
+
+El máximo veredicto `READY_FOR_DISPOSABLE_STAGING_QA` es informativo: **no arranca ni autoriza la ejecución operativa**. Los métodos C3 no hacen IO, no abren sockets, no recorren procesos ni consumen credenciales.
+
+`src/main/ipc/managed-engine-reconciliation.test.ts` incluye **28 escenarios** sobre declaraciones sintéticas: candidato ideal, 26 rechazos y pureza. Rechaza explícitamente perfil NORMAL, puerto reservado operacional, censo hecho antes del lease (carrera TOCTOU), servicio extranjero o propio aún activo, árbol huérfano o desconocido, estado Job Object dudoso y aislamiento de WCB no probado. Pruebas en Windows **NOT_RUN**.
+
+Gate C3 REAL aún necesita desarrollar un *sensor* Windows de lectura que asocie puerto y servicio con PID+fecha de creación e identidad del ejecutable, además de una garantía de que el intento de bind ocurra mientras el lease siga retenido. Nunca adoptar o terminar un proceso por PID/puerto; si la identidad es dudosa, bloquear. La evidencia del sensor y su coherencia no pueden ser reemplazadas por el PASS de una política pura.
+
+Se mantiene C2-N aprobado en QA sintético, ambos PR DRAFT, sin GitHub Actions ni modificaciones a WCB.
