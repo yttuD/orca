@@ -11,6 +11,7 @@
 
 #include <windows.h>
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -109,8 +110,8 @@ class ManagedJobProcess final : public Napi::ObjectWrap<ManagedJobProcess> {
     }
     const double expectedPid = info[1].As<Napi::Number>().DoubleValue();
     const std::string expectedTime = info[2].As<Napi::String>().Utf8Value();
-    if (expectedPid < 1 || expectedPid > 4294967295.0 ||
-        static_cast<double>(static_cast<DWORD>(expectedPid)) != expectedPid ||
+    if (!std::isfinite(expectedPid) || std::floor(expectedPid) != expectedPid ||
+        expectedPid < 1 || expectedPid > 4294967295.0 ||
         expectedTime.empty()) {
       return denied("JOB_IDENTITY_MISMATCH");
     }
