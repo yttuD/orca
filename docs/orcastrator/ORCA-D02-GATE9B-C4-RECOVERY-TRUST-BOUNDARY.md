@@ -164,3 +164,10 @@ El operador entregó la salida de Vitest v5.0.5 del clon aislado Windows: **6 ar
 **Limitación crítica:** `qaEngineSupervisor` existente tiene su propio lifecycle de un child *sintético en ventana E2E oculta*; el estado `RECOVERING` **no es** autorización a recuperar un motor operativo. La decisión aprobada para el MVP mantiene recuperación supervisada. Esta modificación tampoco vuelve posible abrir un Job Object anónimo anterior ni autenticar journals del mismo usuario.
 
 Próximo QA: `pnpm.cmd run tc:web`, `pnpm.cmd run tc:node`, las seis suites focales C4-A/B1/B2-A/B2-B y las dos pruebas renderer ya incluidas. Criterio si realmente aprueba Windows: **6 archivos / 91 pruebas**, marcador `GATE 9B-C4C-B EXISTING QA LIFECYCLE DISPLAY: PASS`. No requiere recompilación MSVC. No tocar motor operativo/WCB, no GitHub Actions ni merges.
+
+
+## Evidencia Windows — Gate 9B-C4-C-B PASS (2026-11-04)
+
+El operador compartió Vitest v5.0.5: **6 archivos/91 pruebas PASS**, duración **2,00 s**, inicio **12:58:34 hora local**, marcador `GATE 9B-C4C-B EXISTING QA LIFECYCLE DISPLAY: PASS`. Se aprueban los escenarios del panel Electron que presenta el ciclo QA desde el IPC existente, con datos sanitizados y recuperación siempre bloqueada. Se trata de pruebas unitarias/SSR y QA anteriores; no es evidencia de ventana Electron real abierta ni certifica procesos históricos/Job Objects. El mensaje de resultado no transcribe individualmente `tc:web` ni `tc:node`.
+
+**Siguiente objetivo:** validación visual/E2E de Electron oculto en el clon QA. En paralelo, propuesta de automatizar esas validaciones mediante un nuevo gate tipado del WCB existente, que requiere implementación y aprobación de un grant local; ver RFC `docs/QA/ORCA-D02-RFC-WCB-TYPED-QA-GATES.md` en el repo motor. Hasta entonces, no afirmar que el Bridge actual pueda ejecutar pnpm/Vitest. Sin GitHub Actions, cambios operativos ni merges.
