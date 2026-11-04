@@ -2,8 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ManagedSupervisedRecoveryPanel } from './ManagedSupervisedRecoveryPanel'
 
-function render(packet?: unknown): string {
-  return renderToStaticMarkup(<ManagedSupervisedRecoveryPanel packet={packet} />)
+function render(packet?: unknown, qaLifecycle?: unknown): string {
+  return renderToStaticMarkup(
+    <ManagedSupervisedRecoveryPanel packet={packet} qaLifecycle={qaLifecycle} />
+  )
 }
 
 describe('Gate 9B-C4-C-A — Electron supervised recovery QA view, no actions', () => {
@@ -71,5 +73,48 @@ describe('Gate 9B-C4-C-A — Electron supervised recovery QA view, no actions', 
     expect(html).not.toContain('historical-secret.json')
     expect(html).not.toContain('HIDE_BLOCK')
     expect(html).toContain('BLOQUEADO')
+  })
+})
+
+
+describe('Gate 9B-C4-C-B Electron QA lifecycle is visible but never authoritative', () => {
+  it('shows no QA lifecycle when the guarded main snapshot is unavailable', () => {
+    const html = render()
+    expect(html).toContain('Sin estado QA confiable de la sesión actual')
+    expect(html).toContain('BLOQUEADO')
+    expect(html).not.toMatch(/<button\b|<a\b|<input\b|<form\b/i)
+  })
+
+  it('displays a sanitized current QA lifecycle separately from the historical journal', () => {
+    const html = render(undefined, {
+      phase: 'ONLINE', owner: 'THIS_ELECTRON', port: 55001, restarts: 3
+    })
+    expect(html).toContain('Ciclo QA de Electron: En línea')
+    expect(html).toContain('Sin evidencia histórica autenticada')
+    expect(html).toContain('Sin diagnóstico QA conectado')
+    expect(html).toContain('BLOQUEADO')
+    expect(html).not.toContain('55001')
+  })
+
+  it('cannot surface secrets through untrusted lifecycle error codes or paths', () => {
+    const html = render(undefined, {
+      phase: 'ERROR', owner: 'NONE',
+      error_code: 'FATAL_C:\\private\\credentials.json',
+      executable: 'C:\\private\\python.exe',
+      token: 'SUPER_SECRET',
+      startupAllowed: true
+    })
+    expect(html).toContain('BLOQUEADO')
+    expect(html).toContain('Ciclo QA de Electron: Error')
+    for(const secret of ['credentials.json', 'python.exe', 'SUPER_SECRET']){
+      expect(html).not.toContain(secret)
+    }
+    expect(html).not.toMatch(/<button\b|<a\b|<input\b|<form\b/i)
+  })
+
+  it('rejects inconsistent ONLINE-without-owner input and keeps startup disabled', () => {
+    const html = render(undefined, { phase: 'ONLINE', owner: 'NONE' })
+    expect(html).toContain('Sin estado QA confiable de la sesión actual')
+    expect(html).toContain('data-recovery-startup-allowed="false"')
   })
 })
