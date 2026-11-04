@@ -120,9 +120,9 @@ windowsOnly('Gate 9B-C3-E-C private Job Object clean close witness', () => {
     // startup and can leave no descendant to test. This gate does not
     // infer membership from a PID or adopt an unrelated process.
     // Node/libuv on Windows places NON-detached children in a second,
-    // internal kill-on-parent-exit Job Object. That previously killed our
-    // synthetic descendant when its root exited, even though Orcastrator's
-    // own Job Object handle remained open (activeProcesses became zero).
+    // internal kill-on-parent-exit Job Object. This likely explains why
+    // our prior fixture lost its synthetic descendant when the root exited,
+    // although Orcastrator's own Job Object stayed open (count reached 0).
     // Using detached + unref avoids Node's *internal* Job Object while
     // remaining in the outer non-breakaway Orcastrator Job Object.
     const grandchildSource = [
