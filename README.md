@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="resources/branding/orcastrator-wordmark.svg" alt="Orcastrator" width="640" />
+
 # Orcastrator
 
 **Orquestación de agentes y desarrollo asistido, con supervisión humana.**
