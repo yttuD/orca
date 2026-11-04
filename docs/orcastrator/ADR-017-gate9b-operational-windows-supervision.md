@@ -1,7 +1,7 @@
 # ADR-017 — Gate 9B: contención del motor operativo en Windows
 
 Fecha: 2026-11-04
-Estado: GATE 9B-A POLICY PASS (18/18 WINDOWS); GATE 9B-B NATIVE CANDIDATO NOT_RUN; ACTIVACIÓN OPERATIVA BLOQUEADA
+Estado: GATE 9B-A POLICY PASS (18/18 WINDOWS); GATE 9B-B NATIVO PASS (2/2 WINDOWS); GATE 9B-C PENDIENTE; ACTIVACIÓN OPERATIVA BLOQUEADA
 Requiere: Gate 9A PASS (confirmado 2026-11-04), Gate 8 host NOT_READY (sin listener 8765)
 
 ## Resultado anterior certificado
@@ -130,7 +130,7 @@ inicio del motor operativo**:
   `src/main/ipc/managed-job-native-windows.test.ts` solo usa
   un Node sintético temporal que lanza un descendiente. Comprueba
   la contención de ambos y que el cierre del Job Object termina los
-  dos, sin tocar puertos ni WCB. Está **NOT_RUN**.
+  dos, sin tocar puertos ni WCB. **PASS (2/2) en Windows 2026-11-04**.
 
 La implementación nativa no equivale a una solución operativa completa.
 Todavía faltan *lease* exclusivo contra doble inicio, reconocimiento
@@ -148,7 +148,14 @@ https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
 
 **Resultados de aceptación separados**:
 - 9B-A policy: **18 PASS / Windows**.
-- 9B-B compilar N-API y prueba real padre/hijo: **NOT_RUN**.
-- 9B-C ciclo operativo y falla inesperada del proceso principal:
-  **NOT_IMPLEMENTED / NOT_RUN**.
+- 9B-B compilar N-API y prueba real padre/hijo: **PASS (2/2 WINDOWS)**.
+- 9B-C falla inesperada de padre nativo, lease exclusivo y escenarios
+  de contención: **PENDIENTE / NOT_RUN**.
 - 9B-D habilitación real: **NO AUTORIZADA**.
+
+
+## Confirmación Windows Gate 9B-B (2026-11-04)
+
+El operador informó `tc:node` PASS en 19.597 archivos (15,29 s), `node-gyp 12.3.0` con Node 22.23.4 y VS2026/MSBuild compiló `managed-job-process.cc` y produjo `orca_windows_security.node` (`gyp info ok`), y Vitest `managed-job-native-windows.test.ts`: **2 passed (2)** en 727 ms. Confirmado `GATE 9B NATIVE JOB CONTAINMENT QA: PASS`. Vite advirtió sobre ESM/CommonJS, sin errores.
+
+Este PASS es de `job.close()` explícito sobre procesos QA sintéticos. **No es todavía prueba de caída del dueño, lease de instancia única ni aprobación de arranque operativo.**
