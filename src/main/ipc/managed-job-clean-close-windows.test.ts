@@ -12,11 +12,20 @@ const windowsOnly = process.platform === 'win32' ? describe : describe.skip
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 12000): Promise<void> {
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 12000,
+  describeState?: () => string
+): Promise<void> {
   const started = Date.now()
   while (!predicate()) {
     if (Date.now() - started > timeoutMs) {
-      throw new Error('GATE9C3EC_SYNTHETIC_JOB_TIMEOUT')
+      // A failure must preserve the actual Job Object state, rather than
+      // assuming Windows lost the child or the native close method failed.
+      throw new Error(
+        'GATE9C3EC_SYNTHETIC_JOB_TIMEOUT' +
+        (describeState ? ': ' + describeState() : '')
+      )
     }
     await wait(100)
   }
@@ -128,7 +137,7 @@ windowsOnly('Gate 9B-C3-E-C private Job Object clean close witness', () => {
       await waitUntil(() => {
         const snap = job.snapshot()
         return snap.rootRunning && snap.activeProcesses >= 2
-      })
+      }, 12000, () => JSON.stringify(job.snapshot()))
 
       // We signal ONLY the disposable root created in this same test.
       writeFileSync(path.join(root, 'allow-synthetic-root-exit'), 'exit', {
@@ -137,7 +146,7 @@ windowsOnly('Gate 9B-C3-E-C private Job Object clean close witness', () => {
       await waitUntil(() => {
         const snap = job.snapshot()
         return !snap.rootRunning && snap.activeProcesses >= 1
-      })
+      }, 12000, () => JSON.stringify(job.snapshot()))
 
       expect(job.closeIfEmptyForQa()).toEqual({ state: 'DESCENDANTS_STILL_RUNNING' })
       expect(job.snapshot()).toMatchObject({ closed: false, rootRunning: false })
