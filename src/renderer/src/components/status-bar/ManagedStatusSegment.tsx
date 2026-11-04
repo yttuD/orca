@@ -3,6 +3,7 @@ import { Layers, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ManagedEdgeBridgeHealth } from './ManagedEdgeBridgeHealth'
+import { ManagedSupervisedRecoveryPanel } from './ManagedSupervisedRecoveryPanel'
 import {
   ManagedProjectRow,
   type ManagedProject,
@@ -284,6 +285,10 @@ export function ManagedStatusSegment({
                 {' '}No conecta el motor operativo.
               </p>
             </div>
+          ) : null}
+
+          {qaLifecycle && qaLifecycle.phase !== 'DISABLED' ? (
+            <ManagedSupervisedRecoveryPanel />
           ) : null}
 
           <div className="rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1.5 text-[11px] text-sky-300">
