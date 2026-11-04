@@ -15,6 +15,12 @@ export type ManagedBridgeApi = {
     }[]
   }>
   status: () => Promise<{ status: string; ok: boolean; profile?: string }>
+  edgeHealth: () => Promise<{
+    status: 'ONLINE' | 'OFFLINE' | 'NOT_CONFIGURED' | 'LEGACY' | 'ERROR'
+    port: 8768
+    latest_seq?: number
+    error_code?: string
+  }>
   listTasks: (projectId?: string) => Promise<{
     ok: boolean
     status: 'ONLINE' | 'OFFLINE' | 'ERROR'
