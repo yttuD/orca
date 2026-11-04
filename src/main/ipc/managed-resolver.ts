@@ -26,6 +26,19 @@ export function resolveProfileAndToken(): ManagedProfileConfig {
     port = Number(process.env.MANAGED_PORT)
   }
 
+  // In a hidden E2E run with a complete explicit Managed config, never scan
+  // the host cwd/ancestors for .active_profile or protected token files.
+  // The test endpoint and credentials are supplied by its own fixture.
+  if (
+    process.env.ORCA_E2E_HEADLESS === '1' &&
+    process.env.MANAGED_PROFILE &&
+    process.env.MANAGED_PORT &&
+    process.env.MANAGED_BRIDGE_TOKEN
+  ) {
+    token = process.env.MANAGED_BRIDGE_TOKEN.trim() || null
+    return { profile, port, token, engineUrl: `http://127.0.0.1:${port}/api/managed/rpc` }
+  }
+
   // Check for unambiguous .active_profile JSON descriptor
   let currentDir = process.cwd()
   let activeProfileMetadata: Record<string, unknown> | null = null
