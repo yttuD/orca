@@ -1,9 +1,9 @@
 {
   "name": "orca",
   "version": "1.4.214",
-  "description": "Next-gen IDE for parallel agentic development",
-  "homepage": "https://github.com/stablyai/orca",
-  "author": "stablyai",
+  "description": "Orcastrator — IDE y orquestación de agentes con integración administrada y supervisión humana",
+  "homepage": "https://github.com/yttuD/Chat-AGY-CODEX-Orquestador",
+  "author": "yttuD (custom fork; MIT upstream attribution retained in LICENSE)",
   "bin": {
     "orca": "./out/cli/index.js",
     "orca-dev": "./config/scripts/orca-dev.mjs"

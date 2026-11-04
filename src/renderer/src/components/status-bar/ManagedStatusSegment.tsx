@@ -360,7 +360,7 @@ export function ManagedStatusSegment({
                 </p>
               ) : null}
               <p className="mt-1.5 text-[10px] text-zinc-400">
-                Orca no inicia el motor automáticamente ni ejecuta tareas en segundo plano sin
+                Orcastrator no inicia el motor automáticamente ni ejecuta tareas en segundo plano sin
                 consentimiento humano.
               </p>
             </div>

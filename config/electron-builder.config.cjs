@@ -163,7 +163,7 @@ const winSpeechNativeResource = {
   to: 'node_modules/sherpa-onnx-win-x64'
 }
 // electron-builder replaces these defaults when `depends` is configured; retain
-// Electron's loader requirements alongside Orca's headless-host dependencies.
+// Electron's loader requirements alongside Orcastrator's headless-host dependencies.
 const debElectronRuntimeDependencies = [
   'libgtk-3-0',
   'libnotify4',
@@ -204,29 +204,29 @@ const windowsRuntimeResources = existsSync(
 // Shared with the terminal host helper so its purpose strings cannot drift from the app's.
 const macUsageDescriptions = {
   NSAppleEventsUsageDescription:
-    'Orca allows terminal-launched developer tools to automate local apps when you request it.',
+    'Orcastrator allows terminal-launched developer tools to automate local apps when you request it.',
   NSBluetoothAlwaysUsageDescription:
-    'Orca allows terminal-launched developer tools to access Bluetooth devices when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access Bluetooth devices when you request it.',
   NSBluetoothPeripheralUsageDescription:
-    'Orca allows terminal-launched developer tools to access Bluetooth devices when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access Bluetooth devices when you request it.',
   NSCalendarsUsageDescription:
-    'Orca allows terminal-launched developer tools to access your calendars when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access your calendars when you request it.',
   NSCalendarsFullAccessUsageDescription:
-    'Orca allows terminal-launched developer tools to access your calendars when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access your calendars when you request it.',
   NSCameraUsageDescription: "Application requests access to the device's camera.",
   NSContactsUsageDescription:
-    'Orca allows terminal-launched developer tools to access your contacts when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access your contacts when you request it.',
   NSLocationUsageDescription:
-    'Orca allows terminal-launched developer tools to access location when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access location when you request it.',
   NSLocalNetworkUsageDescription:
-    'Orca allows terminal-launched developer tools to discover and connect to local development servers when you request it.',
+    'Orcastrator allows terminal-launched developer tools to discover and connect to local development servers when you request it.',
   NSMicrophoneUsageDescription: "Application requests access to the device's microphone.",
   NSRemindersUsageDescription:
-    'Orca allows terminal-launched developer tools to access your reminders when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access your reminders when you request it.',
   NSRemindersFullAccessUsageDescription:
-    'Orca allows terminal-launched developer tools to access your reminders when you request it.',
+    'Orcastrator allows terminal-launched developer tools to access your reminders when you request it.',
   NSAudioCaptureUsageDescription:
-    'Orca allows terminal-launched developer tools to capture desktop audio when you request it.',
+    'Orcastrator allows terminal-launched developer tools to capture desktop audio when you request it.',
   NSBonjourServices: ['_http._tcp', '_https._tcp'],
   ...MACOS_FOLDER_USAGE_DESCRIPTIONS
 }
@@ -236,8 +236,8 @@ const ORCA_MAC_TEAM_ID = '6CX3WHS9HZ'
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId,
-  productName: 'Orca',
-  protocols: [{ name: 'Orca', schemes: ['orca'] }],
+  productName: 'Orcastrator',
+  protocols: [{ name: 'Orcastrator', schemes: ['orca'] }],
   toolsets: { appimage: '1.0.3' },
   ...(devChannelBuildVersion
     ? { extraMetadata: { version: devChannelBuildVersion } }
@@ -509,7 +509,7 @@ module.exports = {
     }
   },
   win: {
-    executableName: 'Orca',
+    executableName: 'Orcastrator',
     // SignPath signs Windows installers after packaging, so set release publisherName explicitly.
     // Unsigned dev channels omit it or updater signature checks reject dev updates and return to stable.
     // Sign hook signs nothing: it relays transient NSIS uninstaller files to CI SignPath; unset relay env leaves local/dev builds inert.
@@ -552,7 +552,7 @@ module.exports = {
     ]
   },
   nsis: {
-    artifactName: 'orca-windows-setup.${ext}',
+    artifactName: 'Orcastrator-Windows-Setup.${ext}',
     shortcutName: '${productName}',
     uninstallDisplayName: '${productName}',
     createDesktopShortcut: 'always',
