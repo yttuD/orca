@@ -12,7 +12,7 @@ export type EdgeBridgeHealth = {
   readonly error_code?: string
 }
 
-function readLocalFeedToken(): string | null {
+function readLocalFeedToken(port: number, syntheticE2E: boolean): string | null {
   // E2E must never read tokens from the operator's real LOCALAPPDATA.
   const root = process.env.ORCA_E2E_HEADLESS === '1'
     ? process.env.ORCA_E2E_HOME_DIR
@@ -21,11 +21,17 @@ function readLocalFeedToken(): string | null {
     : process.env.LOCALAPPDATA
   if (!root) return null
   try {
-    const path = join(root, 'Orcastrator', 'bridge', 'edge-chat-bridge', 'token.txt')
+    // The feed isolates credentials by port. Never fall back to the stable
+    // 8768 token when the user opted into the 8769/8770 QA feed.
+    // Synthetic E2E retains its own disposable HOME and fixture token path.
+    const folder = syntheticE2E
+      ? 'edge-chat-bridge'
+      : port === 8768 ? 'edge-chat-bridge' : `edge-chat-bridge-qa-${port}`
+    const path = join(root, 'Orcastrator', 'bridge', folder, 'token.txt')
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 256) return null
     const token = readFileSync(path, 'utf8').trim()
-    return token.length >= 40 && token.length <= 128 ? token : null
+    return /^[A-Za-z0-9_-]{40,128}$/.test(token) ? token : null
   } catch {
     return null
   }
@@ -42,10 +48,12 @@ export async function probeEdgeBridgeHealth(
   // Only a test-profile opt-in may use the isolated v0.2 feed.
   const qaMode = deps.qaMode ?? process.env.ORCA_EDGE_QA_MODE === '1'
   // An ephemeral port override is allowed ONLY in a disposable headless E2E home.
-  // In ordinary Desktop mode the host/port remain the fixed allowlist: 8768/8769.
+  // In ordinary Desktop mode the host/port remain the fixed allowlist: 8768/8769/8770.
   const e2eIsolated =
     qaMode && process.env.ORCA_E2E_HEADLESS === '1' &&
     Boolean(process.env.ORCA_E2E_HOME_DIR)
+  const requestedQaPort = qaMode ? process.env.ORCA_EDGE_QA_PORT : undefined
+  const qaPort = requestedQaPort === '8770' ? 8770 : 8769
   const rawTestPort = e2eIsolated ? process.env.ORCA_EDGE_E2E_PORT : undefined
   const parsedTestPort =
     rawTestPort && /^[1-9][0-9]{3,4}$/.test(rawTestPort) ? Number(rawTestPort) : NaN
@@ -53,15 +61,20 @@ export async function probeEdgeBridgeHealth(
     parsedTestPort >= 1024 && parsedTestPort <= 65535
   const port: number = e2eIsolated && validTestPort
     ? parsedTestPort
-    : qaMode ? 8769 : 8768
+    : qaMode ? qaPort : 8768
+  if (requestedQaPort && requestedQaPort !== '8769' && requestedQaPort !== '8770') {
+    return { status: 'NOT_CONFIGURED', port, error_code: 'INVALID_QA_PORT' }
+  }
   if (rawTestPort && !validTestPort) {
     return { status: 'NOT_CONFIGURED', port, error_code: 'INVALID_E2E_PORT' }
   }
   if ((deps.platform ?? process.platform) !== 'win32') {
     return { status: 'NOT_CONFIGURED', port, error_code: 'WINDOWS_ONLY' }
   }
-  const token = (deps.getToken ?? readLocalFeedToken)()
-  if (!token || token.length < 40 || token.length > 128) {
+  const token = deps.getToken
+    ? deps.getToken()
+    : readLocalFeedToken(port, e2eIsolated && validTestPort)
+  if (!token || !/^[A-Za-z0-9_-]{40,128}$/.test(token)) {
     return { status: 'NOT_CONFIGURED', port, error_code: 'LOCAL_FEED_TOKEN_MISSING' }
   }
 
@@ -80,12 +93,31 @@ export async function probeEdgeBridgeHealth(
       return { status: 'ERROR', port, error_code: 'FEED_AUTH_REJECTED' }
     }
     if (!res.ok) return { status: 'ERROR', port, error_code: 'FEED_UNAVAILABLE' }
-    if (Number(res.headers.get('content-length') || 0) > 2048) {
+    // Reject oversize health replies even when the server omits or lies about
+    // Content-Length. Never buffer an unbounded HTTP response into the main process.
+    const advertised = res.headers.get('content-length')
+    if (advertised !== null &&
+        (!/^[0-9]+$/.test(advertised) || Number(advertised) > 2048)) {
       return { status: 'ERROR', port, error_code: 'FEED_RESPONSE_TOO_LARGE' }
     }
     let payload: unknown
     try {
-      payload = await res.json()
+      const reader = res.body?.getReader()
+      if (!reader) return { status: 'ERROR', port, error_code: 'FEED_INVALID_JSON' }
+      const decoder = new TextDecoder('utf-8', { fatal: true })
+      let json = ''
+      let bytes = 0
+      while (true) {
+        const part = await reader.read()
+        if (part.done) break
+        bytes += part.value.byteLength
+        if (bytes > 2048) {
+          void reader.cancel().catch(() => {})
+          return { status: 'ERROR', port, error_code: 'FEED_RESPONSE_TOO_LARGE' }
+        }
+        json += decoder.decode(part.value, { stream: true })
+      }
+      payload = JSON.parse(json + decoder.decode())
     } catch {
       return { status: 'ERROR', port, error_code: 'FEED_INVALID_JSON' }
     }
