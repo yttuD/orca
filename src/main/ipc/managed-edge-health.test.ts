@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 // Tests must not inherit QA selector flags from the operator's environment.
-beforeEach(() => vi.stubEnv('ORCA_EDGE_QA_PORT', ''))
+beforeEach(() => {
+  vi.stubEnv('ORCA_EDGE_QA_MODE', '0')
+  vi.stubEnv('ORCA_EDGE_QA_PORT', '')
+  vi.stubEnv('ORCA_E2E_HEADLESS', '0')
+  vi.stubEnv('ORCA_EDGE_E2E_PORT', '')
+})
 afterEach(() => vi.unstubAllEnvs())
 import { probeEdgeBridgeHealth } from './managed-edge-health'
 
