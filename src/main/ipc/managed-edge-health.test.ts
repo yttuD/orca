@@ -53,6 +53,73 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     expect(JSON.stringify(qa)).not.toContain(TOKEN)
   })
 
+  it('uses the isolated 8770 token, never reusing production or 8769 credentials', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'orcastrator-feed-qa-'))
+    try {
+      const base = join(root, 'Orcastrator', 'bridge')
+      const stable = join(base, 'edge-chat-bridge')
+      const qa8769 = join(base, 'edge-chat-bridge-qa-8769')
+      const qa8770 = join(base, 'edge-chat-bridge-qa-8770')
+      for (const dir of [stable, qa8769, qa8770]) mkdirSync(dir, { recursive: true })
+      writeFileSync(join(stable, 'token.txt'), 'p'.repeat(48))
+      writeFileSync(join(qa8769, 'token.txt'), 'n'.repeat(48))
+      writeFileSync(join(qa8770, 'token.txt'), 'q'.repeat(48))
+      vi.stubEnv('LOCALAPPDATA', root)
+      vi.stubEnv('ORCA_E2E_HEADLESS', '0')
+
+      const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
+      vi.stubEnv('ORCA_EDGE_QA_PORT', '8770')
+      const qa = await probeEdgeBridgeHealth({
+        platform: 'win32', qaMode: true, get: get as unknown as typeof fetch
+      })
+      expect(qa).toEqual({ status: 'ONLINE', port: 8770, latest_seq: 55 })
+      expect(get.mock.calls[0][0]).toBe('http://127.0.0.1:8770/v2/health')
+      expect(new Headers(get.mock.calls[0][1].headers).get('Authorization'))
+        .toBe('Bearer ' + 'q'.repeat(48))
+
+      vi.stubEnv('ORCA_EDGE_QA_PORT', '8769')
+      const legacyQa = await probeEdgeBridgeHealth({
+        platform: 'win32', qaMode: true, get: get as unknown as typeof fetch
+      })
+      expect(legacyQa.port).toBe(8769)
+      expect(new Headers(get.mock.calls[1][1].headers).get('Authorization'))
+        .toBe('Bearer ' + 'n'.repeat(48))
+
+      const prod = await probeEdgeBridgeHealth({
+        platform: 'win32', qaMode: false, get: get as unknown as typeof fetch
+      })
+      expect(prod.port).toBe(8768)
+      expect(new Headers(get.mock.calls[2][1].headers).get('Authorization'))
+        .toBe('Bearer ' + 'p'.repeat(48))
+
+      // Missing QA token fails closed even though the production token exists.
+      rmSync(join(qa8770, 'token.txt'))
+      vi.stubEnv('ORCA_EDGE_QA_PORT', '8770')
+      const missing = await probeEdgeBridgeHealth({
+        platform: 'win32', qaMode: true, get: get as unknown as typeof fetch
+      })
+      expect(missing).toEqual({
+        status: 'NOT_CONFIGURED', port: 8770, error_code: 'LOCAL_FEED_TOKEN_MISSING'
+      })
+      expect(get).toHaveBeenCalledTimes(3)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an unapproved QA port instead of connecting elsewhere', async () => {
+    vi.stubEnv('ORCA_EDGE_QA_PORT', '8771')
+    const get = vi.fn()
+    const result = await probeEdgeBridgeHealth({
+      platform: 'win32', qaMode: true, getToken: () => TOKEN,
+      get: get as unknown as typeof fetch
+    })
+    expect(result).toEqual({
+      status: 'NOT_CONFIGURED', port: 8769, error_code: 'INVALID_QA_PORT'
+    })
+    expect(get).not.toHaveBeenCalled()
+  })
+
   it('does not read an ambient production token while running headless E2E', async () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-edge-token-test-'))
     try {
