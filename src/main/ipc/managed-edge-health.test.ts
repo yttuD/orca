@@ -177,6 +177,43 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     expect(get).toHaveBeenCalledTimes(2)
   })
 
+  it('rejects malformed bearer tokens before making any network request', async () => {
+    const get = vi.fn()
+    const result = await probeEdgeBridgeHealth({
+      platform: 'win32', getToken: () => 'x'.repeat(47) + ':',
+      get: get as unknown as typeof fetch
+    })
+    expect(result).toEqual({
+      status: 'NOT_CONFIGURED', port: 8768,
+      error_code: 'LOCAL_FEED_TOKEN_MISSING'
+    })
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('bounds the HTTP health response even with missing or false content-length', async () => {
+    const bigPayload = 'x'.repeat(3000)
+    const replies = [
+      new Response(bigPayload, { status: 200 }),
+      new Response(bigPayload, {
+        status: 200, headers: { 'Content-Length': '10' }
+      }),
+      new Response('{}', {
+        status: 200, headers: { 'Content-Length': 'not-a-number' }
+      })
+    ]
+    for (const response of replies) {
+      const state = await probeEdgeBridgeHealth({
+        platform: 'win32', getToken: () => TOKEN,
+        get: (async () => response) as typeof fetch
+      })
+      expect(state).toEqual({
+        status: 'ERROR', port: 8768,
+        error_code: 'FEED_RESPONSE_TOO_LARGE'
+      })
+      expect(JSON.stringify(state)).not.toContain(TOKEN)
+    }
+  })
+
   it('does not treat no-auth, v1, offline, or malformed feeds as healthy', async () => {
     const cases: Array<{ response: Response; expected: string }> = [
       { response: new Response('{}', { status: 401 }), expected: 'ERROR' },
