@@ -31,7 +31,7 @@ function readLocalFeedToken(port: number, syntheticE2E: boolean): string | null 
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 256) return null
     const token = readFileSync(path, 'utf8').trim()
-    return token.length >= 40 && token.length <= 128 ? token : null
+    return /^[A-Za-z0-9_-]{40,128}$/.test(token) ? token : null
   } catch {
     return null
   }
@@ -74,7 +74,7 @@ export async function probeEdgeBridgeHealth(
   const token = deps.getToken
     ? deps.getToken()
     : readLocalFeedToken(port, e2eIsolated && validTestPort)
-  if (!token || token.length < 40 || token.length > 128) {
+  if (!token || !/^[A-Za-z0-9_-]{40,128}$/.test(token)) {
     return { status: 'NOT_CONFIGURED', port, error_code: 'LOCAL_FEED_TOKEN_MISSING' }
   }
 
@@ -93,12 +93,31 @@ export async function probeEdgeBridgeHealth(
       return { status: 'ERROR', port, error_code: 'FEED_AUTH_REJECTED' }
     }
     if (!res.ok) return { status: 'ERROR', port, error_code: 'FEED_UNAVAILABLE' }
-    if (Number(res.headers.get('content-length') || 0) > 2048) {
+    // Reject oversize health replies even when the server omits or lies about
+    // Content-Length. Never buffer an unbounded HTTP response into the main process.
+    const advertised = res.headers.get('content-length')
+    if (advertised !== null &&
+        (!/^[0-9]+$/.test(advertised) || Number(advertised) > 2048)) {
       return { status: 'ERROR', port, error_code: 'FEED_RESPONSE_TOO_LARGE' }
     }
     let payload: unknown
     try {
-      payload = await res.json()
+      const reader = res.body?.getReader()
+      if (!reader) return { status: 'ERROR', port, error_code: 'FEED_INVALID_JSON' }
+      const decoder = new TextDecoder('utf-8', { fatal: true })
+      let json = ''
+      let bytes = 0
+      while (true) {
+        const part = await reader.read()
+        if (part.done) break
+        bytes += part.value.byteLength
+        if (bytes > 2048) {
+          void reader.cancel().catch(() => {})
+          return { status: 'ERROR', port, error_code: 'FEED_RESPONSE_TOO_LARGE' }
+        }
+        json += decoder.decode(part.value, { stream: true })
+      }
+      payload = JSON.parse(json + decoder.decode())
     } catch {
       return { status: 'ERROR', port, error_code: 'FEED_INVALID_JSON' }
     }
