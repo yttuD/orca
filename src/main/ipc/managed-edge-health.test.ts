@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Tests must not inherit QA selector flags from the operator's environment.
+beforeEach(() => vi.stubEnv('ORCA_EDGE_QA_PORT', ''))
 afterEach(() => vi.unstubAllEnvs())
 import { probeEdgeBridgeHealth } from './managed-edge-health'
 
@@ -36,7 +38,7 @@ describe('read-only Edge feed health (no execution privileges)', () => {
     expect(JSON.stringify(res)).not.toContain(TOKEN)
   })
 
-  it('uses opt-in QA 8769 only; default remains production 8768', async () => {
+  it('keeps 8769 as the opt-in QA default and 8768 as production', async () => {
     const get = vi.fn(async (_url: string, _init: RequestInit) => validReply())
     const qa = await probeEdgeBridgeHealth({
       platform: 'win32', qaMode: true, getToken: () => TOKEN,
