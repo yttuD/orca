@@ -245,6 +245,18 @@ import { probeEdgeBridgeHealth } from './managed-edge-health'
 export { fetchManagedActivityFromEngine }
 export * from './managed-mutations'
 
+/** Never forward managed project names, tasks, evidence or review packets from
+ * untrusted frames to the local engine. Read-only IPC is still privileged.
+ */
+function deniedManagedRead() {
+  return {
+    ok: false as const,
+    status: 'ERROR' as const,
+    error_code: 'DESKTOP_OPERATOR_REQUIRED',
+    error_message: 'Solo el escritorio local autorizado puede consultar datos gestionados.'
+  }
+}
+
 export function registerManagedHandlers(): () => void {
   const handlers = [
     'managed:listProjects',
@@ -263,8 +275,19 @@ export function registerManagedHandlers(): () => void {
     ipcMain.removeHandler(h)
   }
 
-  ipcMain.handle('managed:listProjects', () => fetchManagedProjectsFromEngine())
-  ipcMain.handle('managed:status', async () => {
+  ipcMain.handle('managed:listProjects', (event) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedProjectsFromEngine()
+      : { ...deniedManagedRead(), projects: [] }
+  )
+  ipcMain.handle('managed:status', async (event) => {
+    if (!trustedDesktopWindow(event)) {
+      return {
+        ...deniedManagedRead(),
+        profile: 'NORMAL',
+        qa_lifecycle: { phase: 'DISABLED', owner: 'NONE', port: null, restarts: 0 }
+      }
+    }
     const res = await fetchManagedProjectsFromEngine()
     const cfg = resolveProfileAndToken()
     return {
@@ -295,18 +318,30 @@ export function registerManagedHandlers(): () => void {
       ? probeEdgeBridgeHealth()
       : { status: 'ERROR', port: 8768, error_code: 'DESKTOP_OPERATOR_REQUIRED' }
   )
-  ipcMain.handle('managed:listTasks', (_e, p?: string) => fetchManagedTasksFromEngine(p))
-  ipcMain.handle('managed:getExecution', (_e, p: string, t: string) =>
-    fetchManagedExecutionFromEngine(p, t)
+  ipcMain.handle('managed:listTasks', (event, p?: string) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedTasksFromEngine(p)
+      : { ...deniedManagedRead(), tasks: [] }
   )
-  ipcMain.handle('managed:getEvidence', (_e, p: string, t: string, a?: string, k?: string) =>
-    fetchManagedEvidenceFromEngine(p, t, a, k)
+  ipcMain.handle('managed:getExecution', (event, p: string, t: string) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedExecutionFromEngine(p, t)
+      : { ...deniedManagedRead(), execution: null }
   )
-  ipcMain.handle('managed:presentReviewPacket', (_e, p: string, t: string, a?: string) =>
-    fetchManagedReviewPacketFromEngine(p, t, a)
+  ipcMain.handle('managed:getEvidence', (event, p: string, t: string, a?: string, k?: string) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedEvidenceFromEngine(p, t, a, k)
+      : { ...deniedManagedRead(), evidence: null }
   )
-  ipcMain.handle('managed:listActivity', (_e, p: string, t?: string, l?: number, b?: number) =>
-    fetchManagedActivityFromEngine(p, t, l, b)
+  ipcMain.handle('managed:presentReviewPacket', (event, p: string, t: string, a?: string) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedReviewPacketFromEngine(p, t, a)
+      : { ...deniedManagedRead(), review_packet: null }
+  )
+  ipcMain.handle('managed:listActivity', (event, p: string, t?: string, l?: number, b?: number) =>
+    trustedDesktopWindow(event)
+      ? fetchManagedActivityFromEngine(p, t, l, b)
+      : { ...deniedManagedRead(), project_id: p, activities: [] }
   )
 
   const unregMutations = registerManagedMutationHandlers()
